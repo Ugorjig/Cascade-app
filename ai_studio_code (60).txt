@@ -1,0 +1,277 @@
+import { GoogleGenAI, Type } from "@google/genai";
+import type { Post, User, LiveStreamComment } from '../types.ts';
+
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+export async function generateCaption(base64Image: string, mimeType: string): Promise<string> {
+  if (!base64Image) {
+    console.error("generateCaption called with no image");
+    return "";
+  }
+  try {
+    const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
+
+    const imagePart = {
+      inlineData: {
+        data: base64Data,
+        mimeType: mimeType,
+      },
+    };
+
+    const textPart = {
+      text: "Generate a short, engaging, and creative caption for this image for a social media post. Make it sound like a real person posted it, including 1-3 relevant hashtags. The caption should be under 200 characters.",
+    };
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts: [imagePart, textPart] },
+    });
+
+    return response.text.trim();
+  } catch (error) {
+    console.error("Error generating content from Gemini:", error);
+    throw new Error("Failed to generate caption from Gemini API.");
+  }
+}
+
+export async function generateSuggestion(text: string): Promise<string> {
+  try {
+    const prompt = `Based on the following draft for a social media post, generate a more engaging and concise version. Refine the language, and add 1-3 relevant hashtags at the end. The suggestion should be under 280 characters.\n\nDraft: "${text}"`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+
+    return response.text.trim();
+  } catch (error) {
+    console.error("Error generating suggestion from Gemini:", error);
+    throw new Error("Failed to generate suggestion from Gemini API.");
+  }
+}
+
+export async function askGeneralAI(question: string, chatHistory: { role: 'user' | 'model', parts: { text: string }[] }[]): Promise<string> {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [...chatHistory, { role: 'user', parts: [{ text: question }] }],
+            config: {
+                systemInstruction: `You are a helpful and friendly AI assistant for a social media app called Cascade. Be concise and conversational.`,
+            }
+        });
+        return response.text.trim();
+    } catch(error) {
+        console.error("Error asking Gemini:", error);
+        throw new Error("Failed to get answer from Gemini API.");
+    }
+}
+
+interface CoachInsight {
+    title: string;
+    description: string;
+}
+
+export async function getAI_Business_Coach_Advice(
+    user: User,
+    earnings: { subscriptions: number; tips: number; adRevenue: number; gifts: number },
+    userPosts: Post[]
+): Promise<CoachInsight[]> {
+    try {
+        const topPosts = [...userPosts]
+            .sort((a, b) => ((b.likes || 0) + (b.echos || 0)) - ((a.likes || 0) + (a.echos || 0)))
+            .slice(0, 3)
+            .map(p => ({
+                content: p.content.substring(0, 150), // keep it short
+                likes: p.likes || 0,
+                echos: p.echos || 0,
+                comments: p.comments || 0,
+                isSubscriberOnly: p.isSubscriberOnly || false,
+            }));
+
+        const prompt = `You are an expert business coach for social media creators on a platform called Cascade. Your goal is to provide actionable, data-driven advice to help creators grow their audience and increase their earnings. I will provide you with data about a creator. Analyze it and give 3 concise suggestions. The tone should be encouraging and professional.
+
+Creator Data:
+- Bio: "${user.bio || 'Not provided'}"
+- Earnings (last 30 days): Subscriptions: $${earnings.subscriptions}, Tips & Gifts: $${earnings.tips + earnings.gifts}, Ad Revenue: $${earnings.adRevenue}
+- Monetization Settings: Subscriptions enabled: ${!!user.monetizationSettings?.subscriptionsEnabled}, Tips/Gifts enabled: ${!!user.monetizationSettings?.tipsEnabled}, Ads enabled: ${!!user.monetizationSettings?.adsEnabled}
+- Top Performing Posts:
+${topPosts.map((p, i) => `  - Post ${i + 1}: "${p.content}..." (Likes: ${p.likes}, Echos: ${p.echos}, Comments: ${p.comments})`).join('\n')}
+
+Based on this data, provide 3 actionable suggestions to improve monetization or engagement. Make the descriptions useful and specific. For example, if a certain post topic does well, suggest creating more content on that topic, perhaps as a subscriber-only series.`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        insights: {
+                            type: Type.ARRAY,
+                            items: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    title: {
+                                        type: Type.STRING,
+                                        description: 'A short, catchy title for the suggestion.'
+                                    },
+                                    description: {
+                                        type: Type.STRING,
+                                        description: 'A concise, actionable description of the suggestion. Can use markdown for simple lists (e.g., using "-").'
+                                    }
+                                },
+                                required: ['title', 'description']
+                            }
+                        }
+                    },
+                    required: ['insights']
+                }
+            }
+        });
+        
+        const jsonText = response.text.trim();
+        const parsed = JSON.parse(jsonText);
+        
+        return parsed.insights as CoachInsight[];
+
+    } catch (error) {
+        console.error("Error generating business coach advice from Gemini:", error);
+        throw new Error("Failed to generate advice from Gemini API.");
+    }
+}
+
+export interface LiveStreamInsights {
+  sentiment: 'Positive' | 'Neutral' | 'Negative' | 'Mixed';
+  questions: string[];
+  summary: string;
+}
+
+export async function getLiveStreamInsights(comments: LiveStreamComment[]): Promise<LiveStreamInsights> {
+    if (comments.length === 0) {
+        return { sentiment: 'Neutral', questions: [], summary: 'No comments yet.' };
+    }
+
+    const recentComments = comments.slice(-50);
+    const commentTexts = recentComments.map(c => `${c.user.name}: ${c.text}`).join('\n');
+
+    const prompt = `You are an AI assistant for a live streamer. Analyze the following recent chat comments from a live stream.
+
+Chat Log:
+${commentTexts}
+
+Based on the chat log, provide the following in a JSON object:
+1.  "sentiment": The overall sentiment of the chat. Choose one: "Positive", "Neutral", "Negative", "Mixed".
+2.  "questions": An array of up to 3 unique and important questions viewers are asking the streamer.
+3.  "summary": A very brief, one-sentence summary of the main topics being discussed in the chat.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        sentiment: { type: Type.STRING, enum: ['Positive', 'Neutral', 'Negative', 'Mixed'] },
+                        questions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        summary: { type: Type.STRING }
+                    },
+                    required: ['sentiment', 'questions', 'summary']
+                }
+            }
+        });
+        
+        const jsonText = response.text.trim();
+        const parsed = JSON.parse(jsonText);
+        return parsed as LiveStreamInsights;
+
+    } catch (error) {
+        console.error("Error generating live stream insights:", error);
+        throw new Error("Failed to get insights from Gemini API.");
+    }
+}
+
+
+export async function generatePostStreamSummary(streamTitle: string, comments: LiveStreamComment[]): Promise<string> {
+    const commentHighlights = comments.length > 100 ? comments.slice(-100) : comments;
+    const commentTexts = commentHighlights.map(c => `${c.user.name}: "${c.text}"`).join('\n');
+
+    const prompt = `You are an AI assistant tasked with creating a social media post summarizing a concluded live stream.
+
+Stream Title: "${streamTitle}"
+
+Key comments from the chat:
+${commentTexts}
+
+Based on the title and the chat comments, write an engaging summary of the live stream. The summary should be suitable for a social media post on the platform Cascade. It should be concise, capture the main topics and highlights, and end with 2-3 relevant hashtags. The tone should be friendly and enthusiastic.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error generating post-stream summary:", error);
+        throw new Error("Failed to generate summary from Gemini API.");
+    }
+}
+
+export async function generatePostFromTopic(topic: string): Promise<string> {
+  try {
+    const prompt = `You are a savvy social media influencer. Write an engaging, concise, and interesting social media post about the following topic. The post should be under 280 characters and include 2-3 relevant and popular hashtags at the end.
+
+Topic: "${topic}"`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+
+    return response.text.trim();
+  } catch (error) {
+    console.error("Error generating post from topic with Gemini:", error);
+    throw new Error("Failed to generate post from Gemini API.");
+  }
+}
+
+export async function generateReplySuggestions(postContent: string): Promise<string[]> {
+    try {
+        const prompt = `You are an AI assistant for a social media app. Given the following post, generate 3 distinct, short, and engaging replies. Each reply should have a different tone (e.g., one inquisitive, one supportive, one funny).
+
+Post: "${postContent}"`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        replies: {
+                            type: Type.ARRAY,
+                            description: 'An array of 3 distinct reply suggestions, each under 140 characters.',
+                            items: {
+                                type: Type.STRING
+                            }
+                        }
+                    },
+                    required: ['replies']
+                }
+            }
+        });
+
+        const jsonText = response.text.trim();
+        const parsed = JSON.parse(jsonText);
+        
+        return parsed.replies as string[];
+
+    } catch (error) {
+        console.error("Error generating reply suggestions from Gemini:", error);
+        throw new Error("Failed to generate replies from Gemini API.");
+    }
+}

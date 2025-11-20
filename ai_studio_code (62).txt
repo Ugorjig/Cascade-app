@@ -1,0 +1,787 @@
+import React, { useState, useEffect, useCallback, useMemo, useReducer } from 'react';
+import { createPortal } from 'react-dom';
+
+// Providers & Contexts
+import { LanguageProvider } from './contexts/LanguageContext.tsx';
+import { ThemeProvider } from './contexts/ThemeContext.tsx';
+import { NotificationProvider, useNotifications } from './components/Notifications.tsx';
+
+// Components
+import Sidebar from './components/Sidebar.tsx';
+import Feed from './components/Feed.tsx';
+import Trends from './components/Trends.tsx';
+import AuthPage from './components/AuthPage.tsx';
+import { ProfilePage } from './components/ProfilePage.tsx';
+import MessagesPage from './components/MessagesPage.tsx';
+import ExplorePage from './components/ExplorePage.tsx';
+import BookmarksPage from './components/BookmarksPage.tsx';
+import ShopPage from './components/ShopPage.tsx';
+import MonetizationPage from './components/MonetizationPage.tsx';
+import VerificationPage from './components/VerificationPage.tsx';
+import AnalyticsPage from './components/AnalyticsPage.tsx';
+import AdManagerPage from './components/AdManagerPage.tsx';
+import CommunitiesPage from './components/CommunitiesPage.tsx';
+import FollowersPage from './components/FollowersPage.tsx';
+import { CommunityPage } from './components/CommunityPage.tsx';
+import LivePage from './components/LivePage.tsx';
+import LiveStreamPage from './components/LiveStreamPage.tsx';
+import SettingsPage from './components/SettingsPage.tsx';
+import PrivacySettingsPage from './components/PrivacySettingsPage.tsx';
+import NotificationsPage from './components/NotificationsPage.tsx';
+import AskAiPage from './components/AskAiModal.tsx';
+import WalletPage from './components/WalletPage.tsx';
+import ComposePage from './components/ComposePage.tsx';
+import DraftsModal from './components/DraftsModal.tsx';
+import { WatchAndEarnPage } from './components/WatchAndEarnPage.tsx';
+
+// Modals
+import StoryViewer from './components/StoryViewer.tsx';
+import CreateStoryModal from './components/CreateStoryModal.tsx';
+import PostDetailPage from './components/PostDetailPage.tsx';
+import CartModal from './components/CartModal.tsx';
+import GiftModal from './components/GiftModal.tsx';
+import TipModal from './components/TipModal.tsx';
+import CreateAdModal from './components/CreateAdModal.tsx';
+import CreateCommunityModal from './components/CreateCommunityModal.tsx';
+import CreateProductModal from './components/CreateProductModal.tsx';
+import StartLiveModal from './components/StartLiveModal.tsx';
+import PostStreamSummaryModal from './components/PostStreamSummaryModal.tsx';
+import PaymentConfirmationModal from './components/PaymentConfirmationModal.tsx';
+import ThemeModal from './components/ThemeModal.tsx';
+import QrCodeModal from './components/QrCodeModal.tsx';
+import LanguageModal from './components/LanguageModal.tsx';
+
+// Data & Types
+import { 
+    ALL_USERS, INITIAL_POSTS, INITIAL_STORIES, MOCK_PRODUCTS, MOCK_COMMUNITIES, 
+    MOCK_GIFTS, MOCK_AD_CAMPAIGNS, MOCK_LIVE_STREAMS, INITIAL_MESSAGES, MOCK_WATCHABLE_ADS
+} from './constants.tsx';
+import type { 
+    User, Post, Story, Message, Product, Community, Gift, AdCampaign, LiveStream, NewStoryData, MonetizationSettings, MessagingSettings, Transaction, TransactionType, Comment 
+} from './types.ts';
+
+// --- START OF MODAL STATE REFACTOR ---
+
+interface ModalState {
+  isStoryViewerOpen: boolean;
+  storyViewerInitialIndex: number;
+  isCreateStoryModalOpen: boolean;
+  selectedPost: Post | null;
+  commentInitialText?: string;
+  isCartModalOpen: boolean;
+  isGiftModalOpen: boolean;
+  postToGift: Post | null;
+  isTipModalOpen: boolean;
+  userToTip: User | null;
+  isCreateAdModalOpen: boolean;
+  postToPromote: Post | null;
+  isCreateCommunityModalOpen: boolean;
+  isCreateProductModalOpen: boolean;
+  isStartLiveModalOpen: boolean;
+  isPostStreamSummaryModalOpen: boolean;
+  completedStream: LiveStream | null;
+  isPaymentConfirmModalOpen: boolean;
+  paymentDetails: { amount: number; type: 'adFunds' | 'verification' | 'buyCoins' } | null;
+  isThemeModalOpen: boolean;
+  isQrCodeModalOpen: boolean;
+  isLanguageModalOpen: boolean;
+  isDraftsModalOpen: boolean;
+}
+
+const initialModalState: ModalState = {
+  isStoryViewerOpen: false,
+  storyViewerInitialIndex: 0,
+  isCreateStoryModalOpen: false,
+  selectedPost: null,
+  commentInitialText: undefined,
+  isCartModalOpen: false,
+  isGiftModalOpen: false,
+  postToGift: null,
+  isTipModalOpen: false,
+  userToTip: null,
+  isCreateAdModalOpen: false,
+  postToPromote: null,
+  isCreateCommunityModalOpen: false,
+  isCreateProductModalOpen: false,
+  isStartLiveModalOpen: false,
+  isPostStreamSummaryModalOpen: false,
+  completedStream: null,
+  isPaymentConfirmModalOpen: false,
+  paymentDetails: null,
+  isThemeModalOpen: false,
+  isQrCodeModalOpen: false,
+  isLanguageModalOpen: false,
+  isDraftsModalOpen: false,
+};
+
+type ModalAction =
+  | { type: 'OPEN_STORY_VIEWER'; payload: number }
+  | { type: 'OPEN_CREATE_STORY' }
+  | { type: 'VIEW_POST'; payload: { post: Post; commentInitialText?: string } }
+  | { type: 'OPEN_CART' }
+  | { type: 'OPEN_GIFT'; payload: Post }
+  | { type: 'OPEN_TIP'; payload: User }
+  | { type: 'OPEN_CREATE_AD'; payload?: Post }
+  | { type: 'OPEN_CREATE_COMMUNITY' }
+  | { type: 'OPEN_CREATE_PRODUCT' }
+  | { type: 'OPEN_START_LIVE' }
+  | { type: 'OPEN_POST_STREAM_SUMMARY'; payload: LiveStream }
+  | { type: 'OPEN_PAYMENT_CONFIRM'; payload: { amount: number; type: 'adFunds' | 'verification' | 'buyCoins' } }
+  | { type: 'OPEN_THEME' }
+  | { type: 'OPEN_QR_CODE' }
+  | { type: 'OPEN_LANGUAGE' }
+  | { type: 'OPEN_DRAFTS' }
+  | { type: 'CLOSE_ALL' };
+
+const modalReducer = (state: ModalState, action: ModalAction): ModalState => {
+  switch (action.type) {
+    case 'OPEN_STORY_VIEWER': return { ...state, isStoryViewerOpen: true, storyViewerInitialIndex: action.payload };
+    case 'OPEN_CREATE_STORY': return { ...state, isCreateStoryModalOpen: true };
+    case 'VIEW_POST': return { ...state, selectedPost: action.payload.post, commentInitialText: action.payload.commentInitialText };
+    case 'OPEN_CART': return { ...state, isCartModalOpen: true };
+    case 'OPEN_GIFT': return { ...state, isGiftModalOpen: true, postToGift: action.payload };
+    case 'OPEN_TIP': return { ...state, isTipModalOpen: true, userToTip: action.payload };
+    case 'OPEN_CREATE_AD': return { ...state, isCreateAdModalOpen: true, postToPromote: action.payload || null };
+    case 'OPEN_CREATE_COMMUNITY': return { ...state, isCreateCommunityModalOpen: true };
+    case 'OPEN_CREATE_PRODUCT': return { ...state, isCreateProductModalOpen: true };
+    case 'OPEN_START_LIVE': return { ...state, isStartLiveModalOpen: true };
+    case 'OPEN_POST_STREAM_SUMMARY': return { ...state, isPostStreamSummaryModalOpen: true, completedStream: action.payload };
+    case 'OPEN_PAYMENT_CONFIRM': return { ...state, isPaymentConfirmModalOpen: true, paymentDetails: action.payload };
+    case 'OPEN_THEME': return { ...state, isThemeModalOpen: true };
+    case 'OPEN_QR_CODE': return { ...state, isQrCodeModalOpen: true };
+    case 'OPEN_LANGUAGE': return { ...state, isLanguageModalOpen: true };
+    case 'OPEN_DRAFTS': return { ...state, isDraftsModalOpen: true };
+    case 'CLOSE_ALL': return { ...initialModalState };
+    default: return state;
+  }
+};
+
+// --- END OF MODAL STATE REFACTOR ---
+
+const AppContent: React.FC = () => {
+    // State
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [activeView, setActiveView] = useState('Home');
+    const [previousView, setPreviousView] = useState('Home');
+    const { addNotification } = useNotifications();
+    const [modalState, dispatchModals] = useReducer(modalReducer, initialModalState);
+
+    // Data State
+    const [users, setUsers] = useState<User[]>(ALL_USERS);
+    const [posts, setPosts] = useState<Post[]>(INITIAL_POSTS);
+    const [stories, setStories] = useState<{ user: User, stories: Story[] }[]>(() => {
+        const userStories: Record<string, { user: User, stories: Story[] }> = {};
+        INITIAL_STORIES.forEach(story => {
+            if (!userStories[story.user.id]) {
+                userStories[story.user.id] = { user: story.user, stories: [] };
+            }
+            userStories[story.user.id].stories.push(story);
+        });
+        return Object.values(userStories);
+    });
+    const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+    const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
+    const [communities, setCommunities] = useState<Community[]>(MOCK_COMMUNITIES);
+    const [adCampaigns, setAdCampaigns] = useState<AdCampaign[]>(MOCK_AD_CAMPAIGNS);
+    const [liveStreams, setLiveStreams] = useState<LiveStream[]>(MOCK_LIVE_STREAMS);
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [drafts, setDrafts] = useState<Partial<Post>[]>([]);
+    
+    // UI State
+    const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
+    const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
+    
+    // Page/Detail View State
+    const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
+    const [selectedLiveStream, setSelectedLiveStream] = useState<LiveStream | null>(null);
+    const [profileUser, setProfileUser] = useState<User | null>(null);
+    const [activeConversationUserId, setActiveConversationUserId] = useState<string | null>(null);
+
+    // Compose Page & Drafts State
+    const [composePostToQuote, setComposePostToQuote] = useState<Post | null>(null);
+    const [composePostToEdit, setComposePostToEdit] = useState<Partial<Post> | null>(null);
+    const [composeInitialText, setComposeInitialText] = useState<string | undefined>();
+    
+    // User State
+    const [cartItems, setCartItems] = useState<Product[]>([]);
+    const [subscribedToUserIds, setSubscribedToUserIds] = useState<string[]>([]);
+    const [blockedUserIds, setBlockedUserIds] = useState<string[]>([]);
+    const [claimedAdRewards, setClaimedAdRewards] = useState<Record<string, ('like' | 'echo')[]>>({});
+    const [watchedAdIds, setWatchedAdIds] = useState<string[]>([]);
+
+    // Handlers
+    const handleLogin = (user: User) => setCurrentUser(user);
+    const handleLogout = () => { setCurrentUser(null); setActiveView('Home'); };
+
+    const handleNavigate = useCallback((view: string) => {
+        setPreviousView(activeView);
+        setActiveView(view);
+        setProfileUser(null);
+        setSelectedCommunity(null);
+        setSelectedLiveStream(null);
+        setMobileMenuOpen(false);
+        window.scrollTo(0, 0);
+    }, [activeView]);
+
+    const handleBack = useCallback(() => {
+        handleNavigate(previousView);
+    }, [handleNavigate, previousView]);
+
+    const handleViewProfile = useCallback((userId: string) => {
+        const user = users.find(u => u.id === userId);
+        if (user) {
+            setPreviousView(activeView);
+            setActiveView('Profile');
+            setProfileUser(user);
+            setSelectedCommunity(null);
+            setSelectedLiveStream(null);
+            setMobileMenuOpen(false);
+            window.scrollTo(0, 0);
+        }
+    }, [users, activeView]);
+    
+    const handleFollow = useCallback((userId: string) => {
+        if (!currentUser) return;
+
+        const isFollowing = (currentUser.followingIds || []).includes(userId);
+        const otherUser = users.find(u => u.id === userId);
+        if (!otherUser) return;
+        
+        let updatedFollowingIds;
+        let updatedFollowersCount;
+        let updatedCurrentUserFollowingCount;
+
+        if (isFollowing) {
+            updatedFollowingIds = (currentUser.followingIds || []).filter(id => id !== userId);
+            updatedFollowersCount = (otherUser.followers || 1) - 1;
+            updatedCurrentUserFollowingCount = (currentUser.following || 1) - 1;
+            addNotification(`Unfollowed ${otherUser.name}`, 'info');
+        } else {
+            updatedFollowingIds = [...(currentUser.followingIds || []), userId];
+            updatedFollowersCount = (otherUser.followers || 0) + 1;
+            updatedCurrentUserFollowingCount = (currentUser.following || 0) + 1;
+            addNotification(`Followed ${otherUser.name}`, 'info');
+        }
+
+        const updatedCurrentUser = { ...currentUser, followingIds: updatedFollowingIds, following: updatedCurrentUserFollowingCount };
+        setCurrentUser(updatedCurrentUser);
+
+        setUsers(users.map(u => {
+            if (u.id === currentUser.id) return updatedCurrentUser;
+            if (u.id === userId) return { ...u, followers: updatedFollowersCount };
+            return u;
+        }));
+    }, [addNotification, currentUser, users]);
+
+    /**
+     * Centralized video playback control.
+     * Setting a video to play will automatically pause any other video
+     * by updating the single \`playingVideoId\` state.
+     * @param postId The ID of the post whose video should be played, or toggled off.
+     */
+    const handlePlayVideo = useCallback((postId: string) => {
+        setPlayingVideoId(prevId => (prevId === postId ? null : postId));
+    }, []);
+
+    const pauseAllVideos = useCallback(() => {
+        setPlayingVideoId(null);
+    }, []);
+
+    // Page/Modal openers that should pause background videos
+    const openStoryViewer = useCallback((userIndex: number) => {
+        pauseAllVideos();
+        dispatchModals({ type: 'OPEN_STORY_VIEWER', payload: userIndex });
+    }, [pauseAllVideos]);
+
+    const handleOpenCompose = useCallback((options?: { postToQuote?: Post; postToEdit?: Partial<Post>; initialText?: string }) => {
+        pauseAllVideos();
+        setComposePostToQuote(options?.postToQuote || null);
+        setComposePostToEdit(options?.postToEdit || null);
+        setComposeInitialText(options?.initialText);
+        handleNavigate('Compose');
+    }, [pauseAllVideos, handleNavigate]);
+
+    const openCreateStoryModal = useCallback(() => {
+        pauseAllVideos();
+        dispatchModals({ type: 'OPEN_CREATE_STORY' });
+    }, [pauseAllVideos]);
+
+     const openStartLiveModal = useCallback(() => {
+        pauseAllVideos();
+        dispatchModals({ type: 'OPEN_START_LIVE' });
+    }, [pauseAllVideos]);
+
+    const openGiftModal = useCallback((post: Post) => {
+        pauseAllVideos();
+        dispatchModals({ type: 'OPEN_GIFT', payload: post });
+    }, [pauseAllVideos]);
+
+    const openTipModal = useCallback((user: User) => {
+        pauseAllVideos();
+        dispatchModals({ type: 'OPEN_TIP', payload: user });
+    }, [pauseAllVideos]);
+
+    const openCreateAdModal = useCallback((post?: Post) => {
+        pauseAllVideos();
+        dispatchModals({ type: 'OPEN_CREATE_AD', payload: post });
+    }, [pauseAllVideos]);
+
+    // Post interaction handlers
+    const handleToggleLike = (postId: string) => setPosts(posts.map(p => p.id === postId ? { ...p, isLiked: !p.isLiked, likes: p.isLiked ? p.likes - 1 : p.likes + 1 } : p));
+    const handleToggleEcho = (postId: string) => setPosts(posts.map(p => p.id === postId ? { ...p, isEchoed: !p.isEchoed, echos: p.isEchoed ? p.echos - 1 : p.echos + 1 } : p));
+    const handleToggleBookmark = (postId: string) => setPosts(posts.map(p => p.id === postId ? { ...p, isBookmarked: !p.isBookmarked } : p));
+    
+    const handleDeleteDraft = useCallback((draftId: string) => {
+        setDrafts(drafts => drafts.filter(d => d.id !== draftId));
+    }, []);
+    
+    const handleCreatePost = useCallback((content: string, fileUrl?: string, fileType?: 'image' | 'video', isSubscriberOnly?: boolean, communityId?: string, scheduledAt?: string, quotedPost?: Post, thumbnailUrl?: string, duration?: number, poll?: { choices: string[], durationInDays: number }, taggedProduct?: Product, location?: string, draftId?: string) => {
+        if (!currentUser) return;
+        const newPost: Post = {
+            id: `post-${Date.now()}`,
+            user: currentUser,
+            content,
+            imageUrl: fileType === 'image' ? fileUrl : undefined,
+            videoUrl: fileType === 'video' ? fileUrl : undefined,
+            thumbnailUrl,
+            duration,
+            fileType,
+            likes: 0,
+            comments: 0,
+            commentData: [],
+            echos: 0,
+            timestamp: new Date().toISOString(),
+            isLiked: false,
+            isEchoed: false,
+            isBookmarked: false,
+            isSubscriberOnly,
+            communityId,
+            scheduledAt,
+            status: scheduledAt ? 'scheduled' : 'published',
+            quotedPost,
+            poll: poll ? { choices: poll.choices.map(c => ({ text: c, votes: 0 })), endsAt: new Date(Date.now() + poll.durationInDays * 24 * 60 * 60 * 1000).toISOString() } : undefined,
+            taggedProduct,
+            location,
+        };
+        setPosts(prevPosts => [newPost, ...prevPosts]);
+        if (draftId) {
+            handleDeleteDraft(draftId);
+        }
+        setComposePostToQuote(null);
+        setComposePostToEdit(null);
+        setComposeInitialText(undefined);
+        handleNavigate('Home');
+        addNotification('Your post was sent!', 'info');
+    }, [currentUser, addNotification, handleDeleteDraft, handleNavigate]);
+
+    const handleViewPost = useCallback((post: Post) => {
+        pauseAllVideos();
+        dispatchModals({ type: 'VIEW_POST', payload: { post, commentInitialText: undefined } });
+    }, [pauseAllVideos]);
+
+    const handleOpenQuoteModal = useCallback((post: Post) => {
+        handleOpenCompose({ postToQuote: post });
+    }, [handleOpenCompose]);
+
+    const handleOpenEditModal = useCallback((post: Post) => {
+        handleOpenCompose({ postToEdit: post });
+    }, [handleOpenCompose]);
+
+    const handleEditPost = useCallback((postId: string, newContent: string) => {
+        setPosts(posts => posts.map(p => p.id === postId ? { ...p, content: newContent, editedAt: new Date().toISOString() } : p));
+        setComposePostToQuote(null);
+        setComposePostToEdit(null);
+        setComposeInitialText(undefined);
+        handleNavigate('Home');
+    }, [handleNavigate]);
+
+    const handleCreateComment = useCallback((postId: string, content: string) => {
+        if (!currentUser) return;
+        const newComment: Comment = { id: `comment-${Date.now()}`, user: currentUser, content, timestamp: new Date().toISOString() };
+        setPosts(posts => posts.map(p => p.id === postId ? { ...p, comments: p.comments + 1, commentData: [...(p.commentData || []), newComment] } : p));
+    }, [currentUser]);
+
+     const handleGenerateAndCompose = (generatedText: string) => {
+        handleOpenCompose({ initialText: generatedText });
+    };
+    const handleComposeBack = useCallback(() => {
+        setComposePostToQuote(null);
+        setComposePostToEdit(null);
+        setComposeInitialText(undefined);
+        handleBack();
+    }, [handleBack]);
+
+    // Draft handlers
+    const handleSaveDraft = useCallback((draftData: Partial<Post>, options?: { silent?: boolean }): string => {
+        let savedDraftId = draftData.id;
+        const existingDraftIndex = savedDraftId ? drafts.findIndex(d => d.id === savedDraftId) : -1;
+
+        if (existingDraftIndex > -1) {
+            // Update existing draft
+            const newDrafts = [...drafts];
+            newDrafts[existingDraftIndex] = { ...newDrafts[existingDraftIndex], ...draftData };
+            setDrafts(newDrafts);
+            if (!options?.silent) {
+                addNotification('Draft updated!', 'info');
+            }
+        } else {
+            // Create new draft
+            savedDraftId = `draft-${Date.now()}`;
+            const newDraft: Partial<Post> = { ...draftData, id: savedDraftId };
+            setDrafts([newDraft, ...drafts]);
+            if (!options?.silent) {
+                addNotification('Draft saved!', 'info');
+            }
+        }
+        return savedDraftId!;
+    }, [drafts, addNotification]);
+
+
+    const handleSendMessage = useCallback((receiverId: string, message: { text?: string; audioUrl?: string; type: 'text' | 'audio' }) => {
+      if(!currentUser) return;
+      const newMessage: Message = {
+        id: `msg-${Date.now()}`,
+        senderId: currentUser.id,
+        receiverId: receiverId,
+        timestamp: new Date().toISOString(),
+        read: false,
+        ...message
+      };
+      setMessages(prev => [...prev, newMessage]);
+    }, [currentUser]);
+    
+    const handleViewCommunity = useCallback((community: Community) => {
+        setSelectedCommunity(community);
+        handleNavigate('Community');
+    }, [handleNavigate]);
+    
+    const handleViewStream = useCallback((stream: LiveStream) => {
+        pauseAllVideos();
+        setSelectedLiveStream(stream);
+        handleNavigate('LiveStream');
+    }, [handleNavigate, pauseAllVideos]);
+    
+    const defaultMonetizationSettings: MonetizationSettings = {
+        subscriptionsEnabled: false,
+        giftsEnabled: false,
+        adsEnabled: false,
+        tipsEnabled: false
+    };
+
+    const handleUpdateMonetizationSettings = useCallback((setting: keyof MonetizationSettings, value: boolean) => {
+        if (!currentUser) return;
+        const newSettings = { ...(currentUser.monetizationSettings || defaultMonetizationSettings), [setting]: value };
+        const updatedUser = { ...currentUser, monetizationSettings: newSettings };
+        setCurrentUser(updatedUser);
+        setUsers(users => users.map(u => u.id === currentUser.id ? updatedUser : u));
+        addNotification('Monetization settings updated!', 'info');
+    }, [addNotification, currentUser, defaultMonetizationSettings]);
+
+    const onShareSummary = useCallback((summary: string) => {
+        handleCreatePost(summary);
+        dispatchModals({ type: 'CLOSE_ALL' });
+    }, [handleCreatePost]);
+
+    const handleSendGift = useCallback((post: Post, gift: Gift) => {
+        if (!currentUser) return;
+        setPosts(posts => posts.map(p => p.id === post.id ? { ...p, giftsReceived: [...(p.giftsReceived || []), { giftId: gift.id, userId: currentUser.id }] } : p));
+        addNotification(`You sent a ${gift.name} gift!`, 'info');
+        dispatchModals({ type: 'CLOSE_ALL' });
+    }, [addNotification, currentUser]);
+
+    const handleSendTip = useCallback((amount: number, user: User) => {
+        addNotification(`You tipped ${user.name} ${amount} coins!`, 'info');
+        dispatchModals({ type: 'CLOSE_ALL' });
+    }, [addNotification]);
+
+    const handleWatchAdComplete = useCallback((adId: string) => {
+        if (watchedAdIds.includes(adId)) return;
+        
+        const ad = MOCK_WATCHABLE_ADS.find(a => a.id === adId);
+        if (!ad) return;
+
+        setWatchedAdIds(prev => [...prev, adId]);
+        const rewardInDollars = ad.reward / 100;
+        
+        setUsers(users => users.map(u => {
+            if (u.id === currentUser!.id) {
+                const newBalance = (u.adBalance || 0) + rewardInDollars;
+                // Also update currentUser state
+                setCurrentUser(prevUser => ({...prevUser!, adBalance: newBalance}));
+                return {...u, adBalance: newBalance};
+            }
+            return u;
+        }));
+
+        addNotification(`You earned $${rewardInDollars.toFixed(2)} in ad credits!`, 'info');
+    }, [watchedAdIds, addNotification]);
+    
+    if (!currentUser) {
+        return <AuthPage users={users} onLogin={handleLogin} />;
+    }
+
+    const renderActiveView = () => {
+        const userProfile = profileUser || currentUser;
+        switch(activeView) {
+            case 'Profile': return <ProfilePage user={userProfile} allPosts={posts} allProducts={products} activeAdCampaigns={adCampaigns} currentUser={currentUser} subscribedToUserIds={subscribedToUserIds} handleUpdateProfile={()=>{}} openCreateProductModal={() => dispatchModals({ type: 'OPEN_CREATE_PRODUCT' })} onBack={handleBack} {...commonPostHandlers} />;
+            case 'Messages': return <MessagesPage messages={messages} currentUser={currentUser} allUsers={users} onSendMessage={handleSendMessage} onMarkAsRead={()=>{}} onMessageReaction={()=>{}} activeConversationUserId={activeConversationUserId} setActiveConversationUserId={setActiveConversationUserId} onBack={handleBack} />;
+            case 'Explore': return <ExplorePage posts={posts} activeAdCampaigns={adCampaigns} onBack={handleBack} {...commonPostHandlers} />;
+            case 'Bookmarks': return <BookmarksPage posts={posts} activeAdCampaigns={adCampaigns} onBack={handleBack} {...commonPostHandlers} />;
+            case 'Store': return <ShopPage handleAddToCart={() => {}} onBack={handleBack} openCartModal={() => dispatchModals({ type: 'OPEN_CART' })} showCart />;
+            case 'Monetization': return <MonetizationPage earnings={{subscriptions: 50, tips: 20, adRevenue: 120, gifts: 15}} currentUser={currentUser} onUpdateSettings={handleUpdateMonetizationSettings} allPosts={posts} onBack={handleBack} onNavigate={handleNavigate} />;
+            case 'Verification': return <VerificationPage currentUser={currentUser} handleVerificationRequestSubmit={()=>{}} handleVerificationPayment={()=>{}} handleResubmitVerification={()=>{}} onBack={handleBack} />;
+            case 'Analytics': return <AnalyticsPage currentUser={currentUser} allPosts={posts} onBack={handleBack} {...commonPostHandlers} />;
+            case 'Ad Manager': return <AdManagerPage campaigns={adCampaigns.filter(c => c.ownerId === currentUser.id)} onCreateAd={() => openCreateAdModal()} currentUser={currentUser} onAddFunds={()=>{}} onBack={handleBack} />;
+            case 'Communities': return <CommunitiesPage allCommunities={communities} currentUser={currentUser} onJoinCommunity={()=>{}} onCreateCommunity={() => dispatchModals({ type: 'OPEN_CREATE_COMMUNITY' })} onViewCommunity={handleViewCommunity} onBack={handleBack} />;
+            case 'Followers': return <FollowersPage currentUser={currentUser} allUsers={users} onBack={handleBack} handleViewProfile={handleViewProfile} handleFollow={handleFollow} />;
+            case 'Community': return selectedCommunity ? <CommunityPage community={selectedCommunity} allPosts={posts} onBack={handleBack} {...commonPostHandlers} /> : null;
+            case 'Live': return <LivePage liveStreams={liveStreams} allPosts={posts} allProducts={products} adCampaigns={adCampaigns} onViewStream={handleViewStream} onStartStream={openStartLiveModal} currentUser={currentUser} onBack={handleBack} {...commonPostHandlers} />;
+            case 'LiveStream': return selectedLiveStream ? <LiveStreamPage stream={selectedLiveStream} currentUser={currentUser} onEndStream={()=>{}} onAddComment={()=>{}} onBack={handleBack} /> : null;
+            case 'Settings': return <SettingsPage setActiveView={handleNavigate} openLanguageModal={() => dispatchModals({ type: 'OPEN_LANGUAGE' })} openQrCodeModal={() => dispatchModals({ type: 'OPEN_QR_CODE' })} onBack={handleBack} />;
+            case 'Privacy': return <PrivacySettingsPage currentUser={currentUser} onUpdateSettings={()=>{}} onBack={handleBack} />;
+            case 'Notifications': return <NotificationsPage currentUser={currentUser} onBack={handleBack} />;
+            case 'Ask AI': return <AskAiPage onBack={handleBack} />;
+            case 'Wallet': return <WalletPage currentUser={currentUser} transactions={transactions} onBuyCoins={()=>{}} onBack={handleBack} />;
+            case 'Watch & Earn': return <WatchAndEarnPage watchedAdIds={watchedAdIds} onWatchAdComplete={handleWatchAdComplete} onBack={handleBack} />;
+            case 'Compose': return <ComposePage 
+                onBack={handleComposeBack}
+                handleCreatePost={handleCreatePost}
+                handleEditPost={handleEditPost}
+                currentUser={currentUser}
+                joinedCommunities={communities.filter(c => currentUser.joinedCommunityIds?.includes(c.id))}
+                postToQuote={composePostToQuote} 
+                postToEdit={composePostToEdit} 
+                allUsers={users}
+                initialText={composeInitialText} 
+                userProducts={products.filter(p => p.seller.id === currentUser.id)}
+                handleSaveDraft={handleSaveDraft}
+                openDraftsModal={() => dispatchModals({ type: 'OPEN_DRAFTS' })}
+             />;
+            default: return <Feed posts={posts} stories={stories} adCampaigns={adCampaigns} allUsers={users} allProducts={products} currentUser={currentUser} activeView={activeView} setActiveView={handleNavigate} onStoryClick={(userId) => openStoryViewer(stories.findIndex(s => s.user.id === userId))} onCreateStoryClick={openCreateStoryModal} subscribedToUserIds={subscribedToUserIds} handleSubscribe={()=>{}} handleFollow={handleFollow} openGiftModal={openGiftModal} handleAddToCart={()=>{}} viewCommunity={handleViewCommunity} handleSearch={()=>{}} onAdImpression={()=>{}} onAdClick={()=>{}} blockedUserIds={blockedUserIds} handleToggleBlock={()=>{}} handleViewPost={handleViewPost} handleOpenQuoteModal={handleOpenQuoteModal} handleOpenEditModal={handleOpenEditModal} handleOpenBoostModal={openCreateAdModal} handleViewProfile={handleViewProfile} handlePlayVideo={handlePlayVideo} playingVideoId={playingVideoId} onLogout={handleLogout} handleGenerateAndCompose={handleGenerateAndCompose} openCompose={() => handleOpenCompose()} handleRefresh={()=>{}} handleClaimAdReward={()=>{}} claimedAdRewards={claimedAdRewards} onMobileMenuToggle={() => setMobileMenuOpen(prev => !prev)} handleToggleLike={handleToggleLike} handleToggleEcho={handleToggleEcho} handleToggleBookmark={handleToggleBookmark} />;
+        }
+    };
+    
+    const commonPostHandlers = {
+        currentUser,
+        subscribedToUserIds,
+        allUsers: users,
+        playingVideoId,
+        handlePlayVideo,
+        handleToggleLike,
+        handleToggleEcho,
+        handleToggleBookmark,
+        handleSubscribe: () => {},
+        openGiftModal,
+        handleAddToCart: () => {},
+        viewCommunity: handleViewCommunity,
+        handleSearch: () => {},
+        blockedUserIds,
+        handleToggleBlock: () => {},
+        handleViewPost,
+        handleOpenQuoteModal,
+        handleOpenEditModal: handleOpenEditModal,
+        handleOpenBoostModal: openCreateAdModal,
+        handleViewProfile,
+        handleShareToCommunity: () => {},
+        activeAdCampaigns: adCampaigns,
+        allPosts: posts,
+        allProducts: products
+    };
+
+    return (
+        <div className="flex min-h-screen max-w-7xl mx-auto">
+            <Sidebar 
+                activeView={activeView}
+                onNavigate={handleNavigate}
+                openCompose={() => handleOpenCompose()}
+                user={currentUser}
+                onLogout={handleLogout}
+                handleRefresh={() => {}}
+                isMobileMenuOpen={isMobileMenuOpen}
+                setMobileMenuOpen={setMobileMenuOpen}
+            />
+            <main className="flex-1 w-full md:w-auto md:max-w-[600px] border-r border-l border-border dark:border-dark-border">
+                {renderActiveView()}
+            </main>
+            <div className="hidden lg:block">
+                <Trends handleSearch={() => {}} />
+            </div>
+
+            {/* Modals */}
+            <StoryViewer 
+                isOpen={modalState.isStoryViewerOpen} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                usersWithStories={stories} 
+                initialUserIndex={modalState.storyViewerInitialIndex} 
+            />
+            <CreateStoryModal 
+                isOpen={modalState.isCreateStoryModalOpen} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                handleCreateStory={(newStoryData) => {
+                    const newStory: Story = {
+                        id: `story-${Date.now()}`,
+                        user: currentUser,
+                        timestamp: new Date().toISOString(),
+                        ...(newStoryData.type === 'media' 
+                            ? { imageUrl: newStoryData.fileType === 'image' ? newStoryData.fileUrl : undefined, videoUrl: newStoryData.fileType === 'video' ? newStoryData.fileUrl : undefined, fileType: newStoryData.fileType }
+                            : { ...newStoryData, fileType: 'text' })
+                    };
+                    setStories(prev => {
+                        const userStoryIndex = prev.findIndex(s => s.user.id === currentUser.id);
+                        if (userStoryIndex > -1) {
+                            const newStories = [...prev];
+                            newStories[userStoryIndex].stories.push(newStory);
+                            return newStories;
+                        } else {
+                            return [...prev, { user: currentUser, stories: [newStory] }];
+                        }
+                    });
+                }} 
+            />
+            {modalState.selectedPost && (
+                <PostDetailPage 
+                    post={modalState.selectedPost} 
+                    onBack={() => dispatchModals({ type: 'CLOSE_ALL' })}
+                    onCreateComment={handleCreateComment}
+                    commentInitialText={modalState.commentInitialText}
+                    {...commonPostHandlers} 
+                />
+            )}
+            <CartModal 
+                isOpen={modalState.isCartModalOpen} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                cartItems={cartItems} 
+                onRemove={(productId) => setCartItems(prev => prev.filter(p => p.id !== productId))} 
+                currentUser={currentUser} 
+                onCheckout={() => {setCartItems([]); addNotification('Purchase successful!', 'info');}} 
+                onNavigate={handleNavigate} 
+            />
+            <GiftModal 
+                isOpen={modalState.isGiftModalOpen} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                postToGift={modalState.postToGift} 
+                currentUser={currentUser} 
+                handleSendGift={handleSendGift} 
+            />
+            <TipModal 
+                isOpen={modalState.isTipModalOpen} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                userToTip={modalState.userToTip} 
+                currentUser={currentUser} 
+                handleSendTip={handleSendTip}
+            />
+            <CreateAdModal 
+                isOpen={modalState.isCreateAdModalOpen} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                onCreate={(campaignData) => {
+                    const newCampaign: AdCampaign = {
+                        ...campaignData,
+                        id: `camp-${Date.now()}`,
+                        ownerId: currentUser.id,
+                        impressions: 0,
+                        clicks: 0,
+                        spent: 0,
+                    };
+                    setAdCampaigns(prev => [newCampaign, ...prev]);
+                    dispatchModals({ type: 'CLOSE_ALL' });
+                }} 
+                currentUser={currentUser} 
+                userPosts={posts.filter(p => p.user.id === currentUser.id)} 
+                userProducts={products.filter(p => p.seller.id === currentUser.id)} 
+                postToPromote={modalState.postToPromote} 
+            />
+            <CreateCommunityModal 
+                isOpen={modalState.isCreateCommunityModalOpen} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                onCreate={(communityData) => {
+                    const newCommunity: Community = {
+                        ...communityData,
+                        id: `comm-${Date.now()}`,
+                        ownerId: currentUser.id,
+                        memberCount: 1,
+                    };
+                    setCommunities(prev => [newCommunity, ...prev]);
+                    dispatchModals({ type: 'CLOSE_ALL' });
+                }} 
+            />
+            <CreateProductModal 
+                isOpen={modalState.isCreateProductModalOpen} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                onCreate={(productData, fileDataUrl) => {
+                    const newProduct: Product = {
+                        ...productData,
+                        imageUrl: fileDataUrl,
+                        id: `prod-${Date.now()}`,
+                        seller: currentUser,
+                    };
+                    setProducts(prev => [newProduct, ...prev]);
+                    dispatchModals({ type: 'CLOSE_ALL' });
+                }} 
+                currentUser={currentUser} 
+            />
+            <StartLiveModal 
+                isOpen={modalState.isStartLiveModalOpen} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                onCreateStream={(title) => {
+                    const newStream: LiveStream = {
+                        id: `live-${Date.now()}`,
+                        broadcaster: currentUser,
+                        title,
+                        status: 'live',
+                        viewers: 1,
+                        startTime: new Date().toISOString(),
+                        thumbnailUrl: `https://picsum.photos/seed/live-${Date.now()}/640/360`,
+                        comments: [],
+                    };
+                    setLiveStreams(prev => [newStream, ...prev]);
+                    setSelectedLiveStream(newStream);
+                    handleNavigate('LiveStream');
+                    dispatchModals({ type: 'CLOSE_ALL' });
+                }} 
+            />
+            <PostStreamSummaryModal 
+                stream={modalState.completedStream} 
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                onShare={onShareSummary} 
+            />
+            {modalState.paymentDetails && (
+                <PaymentConfirmationModal 
+                    isOpen={modalState.isPaymentConfirmModalOpen} 
+                    onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} 
+                    onConfirm={() => {
+                        addNotification('Payment confirmed!', 'info');
+                        dispatchModals({ type: 'CLOSE_ALL' });
+                    }} 
+                    amount={modalState.paymentDetails.amount} 
+                    type={modalState.paymentDetails.type} 
+                />
+            )}
+            <ThemeModal isOpen={modalState.isThemeModalOpen} onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} />
+            <QrCodeModal isOpen={modalState.isQrCodeModalOpen} onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} user={currentUser} />
+            <LanguageModal isOpen={modalState.isLanguageModalOpen} onClose={() => dispatchModals({ type: 'CLOSE_ALL' })} />
+            <DraftsModal 
+                isOpen={modalState.isDraftsModalOpen}
+                onClose={() => dispatchModals({ type: 'CLOSE_ALL' })}
+                drafts={drafts}
+                onLoadDraft={(draft) => {
+                    handleOpenCompose({ postToEdit: draft });
+                    dispatchModals({ type: 'CLOSE_ALL' });
+                }}
+                onDeleteDraft={handleDeleteDraft}
+            />
+            
+            <div id="modal-root"></div>
+        </div>
+    );
+};
+
+// Main App component with providers
+export const App = () => (
+    <LanguageProvider>
+        <ThemeProvider>
+            <NotificationProvider>
+                <AppContent />
+            </NotificationProvider>
+        </ThemeProvider>
+    </LanguageProvider>
+);

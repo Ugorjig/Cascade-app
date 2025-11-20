@@ -1,0 +1,253 @@
+// FIX: Add `tipsEnabled` property to resolve type error in geminiService.
+export interface MonetizationSettings {
+  subscriptionsEnabled: boolean;
+  giftsEnabled: boolean;
+  adsEnabled: boolean;
+  tipsEnabled: boolean;
+}
+
+export interface MessagingSettings {
+  allowDmsFrom: 'everyone' | 'following' | 'none';
+  allowAudioCalls: boolean;
+  allowVideoCalls: boolean;
+}
+
+export interface Community {
+  id: string;
+  name: string;
+  handle: string;
+  description: string;
+  avatarUrl: string;
+  bannerUrl: string;
+  memberCount: number;
+  ownerId: string;
+  isPrivate: boolean;
+  rules?: string[];
+}
+
+export interface User {
+  id:string;
+  name: string;
+  handle: string;
+  avatarUrl: string;
+  bannerUrl?: string;
+  email?: string;
+  bio?: string;
+  location?: string;
+  country?: string;
+  website?: string;
+  followers?: number;
+  following?: number;
+  subscriptionPrice?: number;
+  monetizationSettings?: MonetizationSettings;
+  messagingSettings?: MessagingSettings;
+  verificationStatus?: 'none' | 'verified' | 'pending_review' | 'pending_payment' | 'rejected';
+  rejectionReason?: string;
+  joinedCommunityIds?: string[];
+  followingIds?: string[];
+  adBalance?: number;
+  coinBalance?: number;
+  currency?: string;
+  locale?: string;
+  accountStatus?: 'active' | 'disabled';
+  monetizationEligibility?: 'eligible' | 'ineligible' | 'under_review';
+  ineligibilityReason?: string;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  imageUrl: string;
+  seller: User;
+}
+
+export interface Gift {
+  id: string;
+  name: string;
+  icon: string;
+  priceInCoins: number;
+}
+
+export interface UserGift {
+  giftId: string;
+  userId: string; // User who sent the gift
+}
+
+export interface PostAnalytics {
+  impressions: number;
+  engagements: number;
+  profileVisits: number;
+  newFollowers: number;
+}
+
+export interface Comment {
+  id: string;
+  user: User;
+  content: string;
+  timestamp: string;
+}
+
+export interface PollChoice {
+  text: string;
+  votes: number;
+}
+
+export interface Poll {
+  choices: PollChoice[];
+  endsAt: string; // ISO string
+}
+
+export interface Post {
+  id:string;
+  user: User;
+  content: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  fileType?: 'image' | 'video';
+  duration?: number; // duration in seconds
+  likes: number;
+  comments: number;
+  commentData: Comment[];
+  echos: number;
+  timestamp: string;
+  editedAt?: string;
+  views?: number;
+  isLiked: boolean;
+  isEchoed: boolean;
+  isBookmarked: boolean;
+  likedBy?: string[];
+  echoedBy?: string[];
+  bookmarkedBy?: string[];
+  isSubscriberOnly?: boolean;
+  taggedProduct?: Product;
+  giftsReceived?: UserGift[];
+  communityId?: string;
+  communityName?: string;
+  analytics?: PostAnalytics;
+  scheduledAt?: string;
+  status?: 'published' | 'scheduled';
+  quotedPost?: Post;
+  poll?: Poll;
+  location?: string;
+  watchAndEarn?: {
+    duration: number;
+    reward: number;
+  };
+}
+
+export interface Story {
+  id: string;
+  user: User;
+  imageUrl?: string;
+  videoUrl?: string;
+  text?: string;
+  backgroundStyle?: string;
+  fontStyle?: string;
+  textColor?: string;
+  fileType: 'image' | 'video' | 'text';
+  timestamp: string;
+  isAd?: boolean;
+  ctaText?: string;
+  ctaLink?: string;
+  isSubscriberOnly?: boolean;
+  giftsReceived?: UserGift[];
+}
+
+export type NewStoryData =
+  | { type: 'media'; fileUrl: string; fileType: 'image' | 'video' }
+  | { type: 'text'; text: string; backgroundStyle: string; fontStyle: string; textColor: string };
+
+export interface Reaction {
+  emoji: string;
+  userId: string;
+}
+
+export interface Message {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  text?: string;
+  audioUrl?: string;
+  type: 'text' | 'audio';
+  timestamp: string;
+  read: boolean;
+  reactions?: Reaction[];
+}
+
+export interface Notification {
+  id: string;
+  message: string;
+  type: 'like' | 'follow' | 'info';
+}
+
+export type AdCampaignCta = 
+  | 'Learn More' | 'Shop Now' | 'Sign Up' | 'Visit Website' 
+  | 'View Profile' | 'Follow' | 'View Post' | 'View Shop' | 'Install';
+
+export type PromotionType = 'account' | 'store' | 'product' | 'website' | 'app' | 'post';
+
+export interface AdCampaign {
+  id: string;
+  name: string;
+  ownerId: string;
+  promotionType: PromotionType;
+  // Optional creative for website/app ads
+  content?: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video';
+  // Link to existing content
+  promotedPostId?: string;
+  promotedProductId?: string;
+  // CTA and destination
+  ctaText: AdCampaignCta;
+  destinationUrl: string;
+  // Budget and performance
+  budget: number;
+  startDate: string; // ISO string
+  endDate: string; // ISO string
+  impressions: number;
+  clicks: number;
+  spent: number;
+  engagementReward?: number;
+}
+
+export interface LiveStreamComment {
+  id: string;
+  user: User;
+  text: string;
+  timestamp: string;
+}
+
+export interface LiveStream {
+  id: string;
+  broadcaster: User;
+  title: string;
+  status: 'live' | 'ended';
+  viewers: number;
+  startTime: string;
+  endTime?: string;
+  thumbnailUrl?: string;
+  comments: LiveStreamComment[];
+}
+
+export type TransactionType = 'deposit' | 'tip' | 'gift' | 'reward' | 'purchase' | 'sale';
+
+export interface Transaction {
+  id: string;
+  type: TransactionType;
+  description: string;
+  amount: number; // can be positive or negative
+  timestamp: string; // ISO string
+}
+
+export interface WatchableAd {
+  id: string;
+  title: string;
+  description: string;
+  videoUrl: string;
+  thumbnailUrl: string;
+  reward: number; // in cents or smallest currency unit
+}

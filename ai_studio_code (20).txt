@@ -1,0 +1,376 @@
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import type { Post as PostType, User, Story as StoryType, Product, Community, AdCampaign } from '../types.ts';
+import { Post } from './Post.tsx';
+import StoriesTray from './StoriesTray.tsx';
+import FollowSuggestions from './FollowSuggestions.tsx';
+import { 
+    MenuIcon,
+    SearchIcon,
+    AddIcon,
+    VerifiedIcon,
+    AdManagerIcon,
+    MonetizationIcon,
+    SettingsIcon,
+    LogoutIcon,
+    ProfileIcon,
+    SparklesIcon,
+    BookmarkIcon,
+    HomeIcon, HomeIconFilled,
+    MailIcon, MailIconFilled,
+    NotificationsIcon, NotificationsIconFilled,
+    TvIcon, TvIconFilled,
+    ShopIcon, ShopIconFilled
+} from '../constants.tsx';
+import AdPost from './AdPost.tsx';
+import { useLanguage } from '../contexts/LanguageContext.tsx';
+import { generatePostFromTopic } from '../services/geminiService.ts';
+import { useNotifications } from './Notifications.tsx';
+
+interface FeedProps {
+  posts: PostType[];
+  stories: { user: User, stories: StoryType[] }[];
+  adCampaigns: AdCampaign[];
+  allUsers: User[];
+  allProducts: Product[];
+  handleToggleLike: (postId: string) => void;
+  handleToggleEcho: (postId: string, isQuotePost?: boolean) => void;
+  handleToggleBookmark: (postId: string) => void;
+  currentUser: User;
+  activeView: string;
+  setActiveView: (view: string) => void;
+  onStoryClick: (userId: string) => void;
+  onCreateStoryClick: () => void;
+  subscribedToUserIds: string[];
+  handleSubscribe: (userId: string) => void;
+  handleFollow: (userId: string) => void;
+  openGiftModal: (post: PostType) => void;
+  handleAddToCart: (product: Product) => void;
+  viewCommunity: (community: Community) => void;
+  handleSearch: (query: string) => void;
+  onAdImpression: (campaignId: string) => void;
+  onAdClick: (campaignId: string) => void;
+  blockedUserIds: string[];
+  handleToggleBlock: (userId: string) => void;
+  handleViewPost: (post: PostType) => void;
+  handleOpenQuoteModal: (post: PostType) => void;
+  handleOpenEditModal: (post: PostType) => void;
+  handleOpenBoostModal: (post: PostType) => void;
+  handleViewProfile: (userId: string) => void;
+  handlePlayVideo: (postId: string) => void;
+  playingVideoId: string | null;
+  onLogout: () => void;
+  handleGenerateAndCompose: (generatedText: string) => void;
+  openCompose: () => void;
+  handleRefresh: () => void;
+  handleClaimAdReward: (campaign: AdCampaign, engagementType: 'like' | 'echo') => void;
+  claimedAdRewards: Record<string, ('like' | 'echo')[]>;
+  onMobileMenuToggle: () => void;
+}
+
+const POSTS_PER_PAGE = 8;
+
+const Spinner = () => (
+    <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+);
+
+const AiPostGenerator: React.FC<{ onGenerate: (text: string) => void }> = ({ onGenerate }) => {
+    const [topic, setTopic] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const { addNotification } = useNotifications();
+
+    const handleGenerate = async () => {
+        if (!topic.trim()) return;
+        setIsLoading(true);
+        try {
+            const postText = await generatePostFromTopic(topic);
+            onGenerate(postText);
+            setTopic('');
+        } catch (error) {
+            console.error('Failed to generate post:', error);
+            addNotification('Failed to generate post. Please try again.', 'info');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="p-4 border-b border-border dark:border-dark-border">
+            <div className="flex items-center gap-2">
+                <input 
+                    type="text" 
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder="✨ Generate a post about..."
+                    className="w-full bg-surface dark:bg-dark-surface rounded-full py-2 px-4 text-on-surface dark:text-dark-on-surface border border-border dark:border-dark-border focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button
+                    onClick={handleGenerate}
+                    disabled={isLoading || !topic.trim()}
+                    className="bg-primary text-white font-bold px-4 py-2 rounded-full hover:bg-primary-hover transition-colors duration-200 flex items-center gap-2 disabled:opacity-50"
+                >
+                    <SparklesIcon className="w-5 h-5" />
+                    <span className="hidden sm:inline">{isLoading ? 'Generating...' : 'Generate'}</span>
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const Feed: React.FC<FeedProps> = ({ posts, stories, adCampaigns, allUsers, allProducts, currentUser, subscribedToUserIds, onLogout, activeView, setActiveView, handleGenerateAndCompose, openCompose, handleRefresh, claimedAdRewards, handleClaimAdReward, onMobileMenuToggle, handleFollow, ...handlers }) => {
+  const { t } = useLanguage();
+  
+  const [displayedPosts, setDisplayedPosts] = useState<PostType[]>([]);
+  const [page, setPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const loaderRef = useRef<HTMLDivElement>(null);
+
+  const filteredPosts = useMemo(() => {
+      const now = new Date();
+      return posts.filter(post => 
+        !handlers.blockedUserIds.includes(post.user.id) &&
+        (post.status !== 'scheduled' || !post.scheduledAt || new Date(post.scheduledAt) <= now)
+      );
+  }, [posts, handlers.blockedUserIds]);
+  
+  useEffect(() => {
+    const initialPosts = filteredPosts.slice(0, POSTS_PER_PAGE);
+    setDisplayedPosts(initialPosts);
+    setPage(1);
+    setHasMore(filteredPosts.length > POSTS_PER_PAGE);
+  }, [filteredPosts]);
+
+  // Callback to load the next page of posts for infinite scrolling.
+  const loadMorePosts = useCallback(() => {
+    // Prevent loading if already in progress or if there are no more posts to show.
+    if (isLoading || !hasMore) return;
+    setIsLoading(true);
+
+    // Simulate network latency for a better user experience.
+    setTimeout(() => { 
+      const nextPage = page + 1;
+      const newPosts = filteredPosts.slice(page * POSTS_PER_PAGE, nextPage * POSTS_PER_PAGE);
+      
+      if (newPosts.length > 0) {
+        setDisplayedPosts(prev => [...prev, ...newPosts]);
+        setPage(nextPage);
+      }
+
+      // Determine if there are more posts to load in subsequent triggers.
+      setHasMore(nextPage * POSTS_PER_PAGE < filteredPosts.length);
+      setIsLoading(false);
+    }, 500);
+  }, [isLoading, hasMore, page, filteredPosts]);
+
+  // This effect sets up the IntersectionObserver to automatically trigger loading more posts
+  // when the user scrolls near the bottom of the feed.
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const firstEntry = entries[0];
+        // When the loader element (at the bottom of the list) becomes visible, load more posts.
+        if (firstEntry.isIntersecting && hasMore && !isLoading) {
+          loadMorePosts();
+        }
+      },
+      // The rootMargin option makes the observer trigger when the loader element is 400px
+      // away from the viewport, loading content before the user reaches the absolute bottom.
+      { rootMargin: '400px' }
+    );
+
+    const currentLoader = loaderRef.current;
+    if (currentLoader) {
+      observer.observe(currentLoader);
+    }
+
+    // Cleanup the observer when the component unmounts or dependencies change.
+    return () => {
+      if (currentLoader) {
+        observer.unobserve(currentLoader);
+      }
+    };
+  }, [hasMore, isLoading, loadMorePosts]);
+
+  const activeAds = useMemo(() => adCampaigns.filter(ad => {
+    const now = new Date();
+    const start = new Date(ad.startDate);
+    const end = new Date(ad.endDate);
+    return now >= start && now <= end && ad.ownerId !== currentUser.id;
+  }), [adCampaigns, currentUser.id]);
+
+  const suggestedUsers = useMemo(() => {
+    const allFollowedIds = [...(currentUser.followingIds || []), ...subscribedToUserIds];
+    const suggestions = allUsers.filter(user => 
+      user.id !== currentUser.id && 
+      !allFollowedIds.includes(user.id) && 
+      !handlers.blockedUserIds.includes(user.id) &&
+      user.accountStatus !== 'disabled'
+    );
+    return suggestions.slice(0, 3);
+  }, [subscribedToUserIds, currentUser.id, currentUser.followingIds, handlers.blockedUserIds, allUsers]);
+
+  const feedItems = useMemo(() => {
+    const items: (PostType | AdCampaign | { type: 'suggestions' })[] = [];
+    let adIndex = 0;
+    const AD_INTERVAL = 5; // Show an ad every 5 posts
+    let suggestionsInjected = false;
+
+    displayedPosts.forEach((post, index) => {
+      items.push(post);
+
+      // Inject follow suggestions after the 2nd post
+      if (index === 1 && suggestedUsers.length > 0 && !suggestionsInjected) {
+          items.push({ type: 'suggestions' });
+          suggestionsInjected = true;
+      }
+      
+      // Inject an ad at intervals, starting after the 4th post
+      if (index > 2 && (index + 1) % AD_INTERVAL === 0) {
+        if (adIndex < activeAds.length) {
+          items.push(activeAds[adIndex]);
+          adIndex++;
+        }
+      }
+    });
+
+    return items;
+  }, [displayedPosts, activeAds, suggestedUsers]);
+  
+  const allPostHandlers = { ...handlers, allUsers };
+  
+  const navLinks = [
+    { labelKey: 'sidebar_home', label: 'Home', icon: HomeIcon, activeIcon: HomeIconFilled },
+    { labelKey: 'sidebar_messages', label: 'Messages', icon: MailIcon, activeIcon: MailIconFilled },
+    { labelKey: 'sidebar_live', label: 'Live', icon: TvIcon, activeIcon: TvIconFilled },
+    { labelKey: 'sidebar_notifications', label: 'Notifications', icon: NotificationsIcon, activeIcon: NotificationsIconFilled },
+    { labelKey: 'sidebar_store', label: 'Store', icon: ShopIcon, activeIcon: ShopIconFilled },
+  ];
+
+  return (
+    <>
+      <div className="w-full">
+        <div className={`sticky top-0 bg-background/80 dark:bg-dark-background/80 backdrop-blur-md z-10`}>
+          <div className="px-4 py-2 flex justify-between items-center">
+            <h1 onClick={(e) => {
+                e.stopPropagation();
+                if (activeView === 'Home') {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    setTimeout(handleRefresh, 100);
+                } else {
+                    setActiveView('Home');
+                }
+            }} className="text-3xl font-bold text-primary cursor-pointer lowercase">cascade</h1>
+            
+            <div className="flex items-center gap-2">
+                <button onClick={(e) => { e.stopPropagation(); openCompose(); }} aria-label="Create new post" className="bg-gray-100 dark:bg-dark-surface w-10 h-10 rounded-full flex items-center justify-center hover:bg-gray-200 dark:hover:bg-dark-surface-hover text-on-surface dark:text-dark-on-surface">
+                    <AddIcon className="w-6 h-6"/>
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); setActiveView('Explore'); }} aria-label="Search" className="bg-gray-100 dark:bg-dark-surface w-10 h-10 rounded-full flex items-center justify-center hover:bg-gray-200 dark:hover:bg-dark-surface-hover text-on-surface dark:text-dark-on-surface">
+                    <SearchIcon className="w-6 h-6"/>
+                </button>
+                <div className="md:hidden">
+                    <button onClick={(e) => { e.stopPropagation(); onMobileMenuToggle(); }} aria-label="Main menu" className="w-10 h-10 rounded-full hover:opacity-90 transition-opacity">
+                        <img src={currentUser.avatarUrl} alt="Open menu" className="w-10 h-10 rounded-full" />
+                    </button>
+                </div>
+            </div>
+          </div>
+          <div className="flex justify-around items-center border-b border-border dark:border-dark-border md:hidden">
+            {navLinks.map((link) => {
+              const isActive = link.label === activeView || (link.label === 'Live' && activeView === 'LiveStream');
+              const Icon = isActive ? link.activeIcon : link.icon;
+              const isHomeLink = link.label === 'Home';
+              return (
+                <button
+                    key={link.label}
+                    onClick={(e) => {
+                        e.preventDefault();
+                        if (isHomeLink && activeView === 'Home') {
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            setTimeout(handleRefresh, 100);
+                        } else {
+                            setActiveView(link.label);
+                        }
+                    }}
+                    className={`flex-1 flex justify-center items-center py-2.5 relative hover:bg-surface-hover dark:hover:bg-dark-surface-hover transition-colors duration-200 ${isActive ? 'text-primary' : 'text-on-surface-secondary dark:text-dark-on-surface-secondary'}`}
+                    aria-label={t(link.labelKey)}
+                >
+                    <Icon className="w-6 h-6" />
+                    {isActive && <div className="absolute bottom-0 h-1 w-14 bg-primary rounded-full"></div>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+            <StoriesTray 
+              storiesByUser={stories}
+              currentUser={currentUser}
+              onStoryClick={handlers.onStoryClick}
+              onCreateStoryClick={handlers.onCreateStoryClick}
+            />
+            <AiPostGenerator onGenerate={handleGenerateAndCompose} />
+              {feedItems.map((item) => {
+                // Type guard for PostType
+                if ('user' in item) {
+                  const post = item as PostType;
+                  const isBoosted = adCampaigns.some(c => c.promotionType === 'post' && c.promotedPostId === post.id);
+                  return (
+                    <Post 
+                      key={post.id}
+                      post={post} 
+                      currentUser={currentUser}
+                      subscribedToUserIds={subscribedToUserIds}
+                      isBoosted={isBoosted}
+                      {...allPostHandlers}
+                    />
+                  );
+                }
+
+                // Type guard for AdCampaign
+                if ('ownerId' in item) {
+                  const campaign = item as AdCampaign;
+                  return (
+                    <AdPost
+                      key={`ad-${campaign.id}`}
+                      campaign={campaign}
+                      allPosts={posts}
+                      allProducts={allProducts}
+                      currentUser={currentUser}
+                      subscribedToUserIds={subscribedToUserIds}
+                      onAdImpression={handlers.onAdImpression}
+                      onAdClick={handlers.onAdClick}
+                      handleClaimAdReward={handleClaimAdReward}
+                      claimedAdRewards={claimedAdRewards}
+                      {...allPostHandlers}
+                    />
+                  );
+                }
+                
+                // Type guard for suggestions
+                if ('type' in item && item.type === 'suggestions') {
+                    return (
+                        <FollowSuggestions 
+                          key="suggestions"
+                          suggestedUsers={suggestedUsers}
+                          handleFollow={handleFollow}
+                          handleViewProfile={handlers.handleViewProfile} 
+                        />
+                    );
+                }
+                
+                return null;
+              })}
+              <div ref={loaderRef} className="flex justify-center items-center h-24">
+                {isLoading && <Spinner />}
+                {!hasMore && displayedPosts.length > POSTS_PER_PAGE && (
+                    <p className="text-on-surface-secondary dark:text-dark-on-surface-secondary">{t('feed_reached_end')}</p>
+                )}
+              </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default Feed;

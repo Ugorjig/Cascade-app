@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Cascade</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              // Primary color
+              primary: '#7C3AED',
+              'primary-hover': '#6D28D9',
+              'primary-light': 'rgba(124, 58, 237, 0.1)',
+
+              // Light Theme
+              background: '#FFFFFF',
+              surface: '#F9FAFB',
+              'surface-hover': '#F3F4F6',
+              border: '#E5E7EB',
+              'on-surface': '#111827',
+              'on-surface-secondary': '#6B7280',
+              
+              // Dark Theme
+              'dark-background': '#111827', // A dark, near-black background
+              'dark-surface': '#1F2937',    // A slightly lighter surface for cards, etc.
+              'dark-surface-secondary': '#374151', // For secondary surfaces or hover states
+              'dark-surface-hover': '#374151',     // Hover state for dark surfaces
+              'dark-border': '#374151',           // Border color
+              'dark-on-surface': '#F9FAFB',       // Primary text color (light gray/white)
+              'dark-on-surface-secondary': '#9CA3AF', // Secondary text color (gray)
+            },
+          },
+        },
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.24.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-background text-on-surface dark:bg-dark-background dark:text-dark-on-surface">
+    <div id="root"></div>
+    <div id="modal-root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

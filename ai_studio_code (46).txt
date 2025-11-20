@@ -1,0 +1,132 @@
+import React, { useState, useRef, useEffect } from 'react';
+import type { User, Transaction, TransactionType } from '../types.ts';
+import { CoinIcon, GiftIcon, TipIcon, ShopIcon, BackIcon } from '../constants.tsx';
+import { useLanguage } from '../contexts/LanguageContext.tsx';
+import { useNotifications } from './Notifications.tsx';
+
+interface WalletPageProps {
+  currentUser: User;
+  transactions: Transaction[];
+  onBuyCoins: (amount: number) => void;
+  onBack?: () => void;
+}
+
+const COIN_PACKAGES = [
+    { amount: 100, price: 0.99 },
+    { amount: 550, price: 4.99 },
+    { amount: 1200, price: 9.99 },
+    { amount: 7000, price: 49.99 },
+];
+
+const TransactionIcon: React.FC<{ type: TransactionType }> = ({ type }) => {
+    switch (type) {
+        case 'deposit':
+            return <div className="w-8 h-8 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center"><CoinIcon className="w-5 h-5" /></div>;
+        case 'tip':
+            return <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center"><TipIcon className="w-5 h-5" strokeWidth="2.5" /></div>;
+        case 'gift':
+            return <div className="w-8 h-8 bg-pink-100 dark:bg-pink-900/50 text-pink-600 dark:text-pink-400 rounded-full flex items-center justify-center"><GiftIcon className="w-5 h-5" /></div>;
+        case 'reward':
+            return <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center"><CoinIcon className="w-5 h-5" /></div>;
+        case 'purchase':
+            return <div className="w-8 h-8 bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center"><ShopIcon className="w-5 h-5" /></div>;
+        case 'sale':
+            return <div className="w-8 h-8 bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center"><ShopIcon className="w-5 h-5" /></div>;
+        default:
+            return <div className="w-8 h-8 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded-full flex items-center justify-center"><CoinIcon className="w-5 h-5" /></div>;
+    }
+};
+
+const WalletPage: React.FC<WalletPageProps> = ({ currentUser, transactions, onBuyCoins, onBack }) => {
+  const { t, locale } = useLanguage();
+  const { addNotification } = useNotifications();
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  // FIX: Explicitly typed the ref with `<number>` to ensure its `current` property is a number.
+  const lastScrollY = useRef<number>(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY.current && currentScrollY > 50) {
+        setIsHeaderVisible(false);
+      } else {
+        setIsHeaderVisible(true);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+  
+  const handleBuy = (amount: number) => {
+    onBuyCoins(amount);
+  };
+
+  return (
+    <div className="w-full border-x border-gray-200 dark:border-dark-border pb-16 md:pb-0 min-h-screen">
+      <div className={`sticky top-0 bg-background/80 dark:bg-dark-background/80 backdrop-blur-md z-10 px-4 py-3 border-b border-gray-200 dark:border-dark-border transition-transform duration-300 ${!isHeaderVisible ? '-translate-y-full' : ''}`}>
+        <div className="flex items-center gap-4">
+          {onBack && (
+            <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-surface-hover dark:hover:bg-dark-surface-hover md:hidden">
+              <BackIcon className="w-6 h-6" />
+            </button>
+          )}
+          <div>
+            <h1 className="text-xl font-bold">{t('wallet_title')}</h1>
+            <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">{t('wallet_description')}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-6">
+        <div className="bg-surface dark:bg-dark-surface rounded-2xl p-6 text-center border border-gray-200 dark:border-dark-border">
+          <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">{t('wallet_current_balance')}</p>
+          <div className="flex items-center justify-center gap-2 mt-2">
+            <CoinIcon className="w-8 h-8 text-amber-500" />
+            <p className="text-4xl font-extrabold text-on-surface dark:text-dark-on-surface">{new Intl.NumberFormat(locale).format(currentUser.coinBalance || 0)}</p>
+          </div>
+        </div>
+        
+        <div className="bg-surface dark:bg-dark-surface rounded-2xl p-6 border border-gray-200 dark:border-dark-border">
+            <h3 className="font-bold text-lg mb-4">{t('wallet_buy_coins')}</h3>
+            <div className="grid grid-cols-2 gap-3">
+                {COIN_PACKAGES.map(pkg => (
+                    <button key={pkg.amount} onClick={() => handleBuy(pkg.amount)} className="text-left p-3 border border-gray-200 dark:border-dark-border rounded-lg hover:bg-gray-100 dark:hover:bg-dark-surface-secondary transition-colors duration-200">
+                        <div className="flex items-center gap-2 font-bold text-amber-500">
+                            <CoinIcon className="w-5 h-5" />
+                            <span>{new Intl.NumberFormat(locale).format(pkg.amount)}</span>
+                        </div>
+                        <p className="text-sm font-semibold text-on-surface-secondary dark:text-dark-on-surface-secondary mt-1">${pkg.price.toFixed(2)}</p>
+                    </button>
+                ))}
+            </div>
+        </div>
+
+        <div className="bg-surface dark:bg-dark-surface rounded-2xl p-6 border border-gray-200 dark:border-dark-border">
+            <h3 className="font-bold text-lg mb-4">{t('wallet_transaction_history')}</h3>
+            {transactions.length > 0 ? (
+                 <ul className="space-y-4">
+                    {transactions.map(tx => (
+                        <li key={tx.id} className="flex items-center gap-4">
+                            <TransactionIcon type={tx.type} />
+                            <div className="flex-1">
+                                <p className="font-semibold">{tx.description}</p>
+                                <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">{new Date(tx.timestamp).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })}</p>
+                            </div>
+                            <div className={`font-bold flex items-center gap-1 ${tx.amount > 0 ? 'text-green-600 dark:text-green-400' : 'text-on-surface dark:text-dark-on-surface'}`}>
+                                <CoinIcon className="w-4 h-4" />
+                                <span>{tx.amount > 0 ? '+' : ''}{new Intl.NumberFormat(locale).format(tx.amount)}</span>
+                            </div>
+                        </li>
+                    ))}
+                 </ul>
+            ) : (
+                <p className="text-center text-on-surface-secondary dark:text-dark-on-surface-secondary py-8">{t('wallet_no_transactions')}</p>
+            )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default WalletPage;

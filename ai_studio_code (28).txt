@@ -1,0 +1,278 @@
+import React, { useState, useEffect, useRef } from 'react';
+import type { LiveStream, LiveStreamComment, User } from '../types.ts';
+import { PeopleIcon, SendIcon, VerifiedIcon, LikeIcon, SparklesIcon, RefreshIcon } from '../constants.tsx';
+import { getLiveStreamInsights, LiveStreamInsights } from '../services/geminiService.ts';
+
+interface LiveStreamPageProps {
+  stream: LiveStream;
+  currentUser: User;
+  onEndStream: (streamId: string) => void;
+  onAddComment: (streamId: string, text: string) => void;
+  onBack: () => void;
+}
+
+const LiveStreamPage: React.FC<LiveStreamPageProps> = ({ stream, currentUser, onEndStream, onAddComment, onBack }) => {
+  const isBroadcaster = stream.broadcaster.id === currentUser.id;
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const commentsContainerRef = useRef<HTMLDivElement>(null);
+  const [comment, setComment] = useState('');
+  const [hearts, setHearts] = useState<{ id: number; x: number }[]>([]);
+  const [activeTab, setActiveTab] = useState('Chat');
+  const [insights, setInsights] = useState<LiveStreamInsights | null>(null);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mediaStream: MediaStream | null = null;
+    const videoElement = videoRef.current;
+
+    if (isBroadcaster) {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+          mediaStream = stream;
+          if (videoElement) {
+            videoElement.srcObject = stream;
+          }
+        })
+        .catch(err => {
+            console.error("Error accessing media devices.", err);
+            setMediaError("Could not access camera and microphone. Please check your browser permissions and try again.");
+        });
+    }
+
+    return () => {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+      }
+      if (videoElement) {
+        videoElement.pause();
+        if (videoElement.srcObject) {
+           const stream = videoElement.srcObject as MediaStream;
+           stream.getTracks().forEach(track => track.stop());
+        }
+        videoElement.srcObject = null;
+      }
+    };
+  }, [isBroadcaster]);
+
+  useEffect(() => {
+    if (commentsContainerRef.current) {
+      commentsContainerRef.current.scrollTop = commentsContainerRef.current.scrollHeight;
+    }
+  }, [stream.comments]);
+
+  const fetchInsights = React.useCallback(async () => {
+    if (isLoadingInsights) return;
+    setIsLoadingInsights(true);
+    setInsightsError(null);
+    try {
+      const result = await getLiveStreamInsights(stream.comments);
+      setInsights(result);
+    } catch (error) {
+      setInsightsError('Could not load AI insights.');
+    } finally {
+      setIsLoadingInsights(false);
+    }
+  }, [isLoadingInsights, stream.comments]);
+
+  useEffect(() => {
+    if (isBroadcaster) {
+      fetchInsights(); // Initial fetch
+      const interval = setInterval(fetchInsights, 30000); // Auto-refresh every 30 seconds
+      return () => clearInterval(interval);
+    }
+  }, [isBroadcaster, fetchInsights]);
+  
+
+  const handleCommentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (comment.trim()) {
+      onAddComment(stream.id, comment.trim());
+      setComment('');
+    }
+  };
+
+  const handleHeartClick = () => {
+    const newHeart = { id: Date.now(), x: Math.random() * 20 - 10 }; // random x offset
+    setHearts(prev => [...prev, newHeart]);
+    setTimeout(() => {
+      setHearts(prev => prev.filter(h => h.id !== newHeart.id));
+    }, 2000); // Remove after 2s animation
+  };
+  
+  const handleVideoClick = () => {
+    if (isBroadcaster) return;
+
+    if (videoRef.current) {
+      if (videoRef.current.paused) {
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                if (error.name !== 'AbortError') {
+                    console.error("Livestream video play failed:", error);
+                }
+            });
+        }
+        if (!document.fullscreenElement && videoRef.current.requestFullscreen) {
+          videoRef.current.requestFullscreen().catch(err => {
+            console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+          });
+        }
+      } else {
+        videoRef.current.pause();
+      }
+    }
+  };
+
+  return (
+    <div ref={pageRef} className="w-full h-screen bg-black flex flex-col relative text-white">
+       <style>{`
+          @keyframes float-up {
+            to {
+              transform: translateY(-200px) scale(1.2);
+              opacity: 0;
+            }
+          }
+          .heart-animation {
+            animation: float-up 2s ease-out forwards;
+          }
+        `}</style>
+
+      {/* Video Background */}
+      <video
+        ref={videoRef}
+        src={!isBroadcaster ? "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" : undefined}
+        autoPlay
+        muted={isBroadcaster}
+        loop={!isBroadcaster}
+        playsInline
+        onClick={handleVideoClick}
+        className="absolute inset-0 w-full h-full object-contain"
+      />
+
+      {isBroadcaster && mediaError && (
+        <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center p-4 z-20">
+            <h2 className="text-xl font-bold text-red-500">Streaming Error</h2>
+            <p className="mt-2 text-white">{mediaError}</p>
+            <button onClick={onBack} className="mt-6 bg-primary text-white font-bold py-2 px-6 rounded-full">
+                Go Back
+            </button>
+        </div>
+      )}
+
+      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/50 pointer-events-none"></div>
+
+      <header className="relative z-10 p-4 flex items-center gap-3 text-white">
+        <div className="w-8 h-8 md:hidden"></div> {/* Spacer */}
+        <img src={stream.broadcaster.avatarUrl} alt={stream.broadcaster.name} className="w-12 h-12 rounded-full flex-shrink-0" />
+        <div className="min-w-0">
+            <div className="flex items-center gap-2">
+                <h1 className="font-bold text-lg leading-tight">{stream.title}</h1>
+                {stream.status === 'live' && <div className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded flex-shrink-0">LIVE</div>}
+            </div>
+            <p className="text-sm text-gray-300">{stream.broadcaster.name}</p>
+        </div>
+        
+        <div className="flex-grow"></div>
+
+        <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5 text-sm font-bold flex-shrink-0">
+                <PeopleIcon className="w-5 h-5" />
+                <span>{stream.viewers.toLocaleString()}</span>
+            </div>
+            <button onClick={onBack} className="text-white text-2xl font-bold flex-shrink-0">&times;</button>
+        </div>
+      </header>
+
+      <div className="relative z-10 flex-1 overflow-hidden flex flex-col justify-end p-4">
+        {(activeTab === 'Chat' || !isBroadcaster) && (
+          <div ref={commentsContainerRef} className="max-h-64 overflow-y-auto space-y-2">
+              {stream.comments.slice().map(c => (
+                  <div key={c.id} className="bg-black/40 p-2 rounded-lg text-sm max-w-xs">
+                      <p>
+                          <span className="font-bold mr-2">{c.user.name}</span>
+                          <span>{c.text}</span>
+                      </p>
+                  </div>
+              ))}
+          </div>
+        )}
+        {activeTab === 'AI' && isBroadcaster && (
+          <div className="max-h-64 overflow-y-auto space-y-3 bg-black/40 p-3 rounded-lg text-sm">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="font-bold text-base">AI Assistant</h3>
+              <button onClick={fetchInsights} disabled={isLoadingInsights} className="p-1 rounded-full hover:bg-white/20">
+                <RefreshIcon className={`w-4 h-4 ${isLoadingInsights ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+            {isLoadingInsights && !insights ? (
+              <p>Analyzing chat...</p>
+            ) : insightsError ? (
+              <p className="text-red-400">{insightsError}</p>
+            ) : insights && (
+              <>
+                <div>
+                  <h4 className="font-semibold text-white/80">Sentiment</h4>
+                  <p>{insights.sentiment}</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-white/80">Key Questions</h4>
+                  {insights.questions.length > 0 ? (
+                    <ul className="list-disc list-inside space-y-1">
+                      {insights.questions.map((q, i) => <li key={i}>{q}</li>)}
+                    </ul>
+                  ) : <p>No questions detected yet.</p>}
+                </div>
+                <div>
+                  <h4 className="font-semibold text-white/80">Summary</h4>
+                  <p>{insights.summary}</p>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      
+       <div className="absolute bottom-20 right-4 h-64 w-16 pointer-events-none">
+        {hearts.map(heart => (
+          <div key={heart.id} className="absolute bottom-0 heart-animation" style={{ left: '50%', transform: `translateX(${heart.x}px)` }}>
+            <LikeIcon className="w-8 h-8 text-pink-500 fill-current" />
+          </div>
+        ))}
+      </div>
+
+      <footer className="relative z-10 p-4">
+        {isBroadcaster ? (
+          <>
+            <div className="flex items-center gap-2 mb-3">
+              <button onClick={() => setActiveTab('Chat')} className={`flex-1 py-2 font-bold rounded-full ${activeTab === 'Chat' ? 'bg-white/20' : 'bg-white/5'}`}>Chat</button>
+              <button onClick={() => setActiveTab('AI')} className={`flex-1 py-2 font-bold rounded-full flex items-center justify-center gap-1 ${activeTab === 'AI' ? 'bg-white/20' : 'bg-white/5'}`}>
+                <SparklesIcon className="w-5 h-5"/> AI Assistant
+              </button>
+            </div>
+            <button onClick={() => onEndStream(stream.id)} className="w-full bg-red-600 font-bold py-3 rounded-full">End Stream</button>
+          </>
+        ) : (
+          <div className="flex items-center gap-3">
+            <form onSubmit={handleCommentSubmit} className="flex-1">
+              <input
+                type="text"
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                placeholder="Add a comment..."
+                className="w-full bg-black/50 border border-white/30 rounded-full py-3 px-4 focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </form>
+            <button onClick={handleHeartClick} className="bg-black/50 border border-white/30 rounded-full p-3 hover:bg-white/20">
+                <LikeIcon className="w-6 h-6 text-pink-500" />
+            </button>
+          </div>
+        )}
+      </footer>
+    </div>
+  );
+};
+
+export default LiveStreamPage;

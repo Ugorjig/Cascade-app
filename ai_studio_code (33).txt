@@ -1,0 +1,227 @@
+import React from 'react';
+import { BackIcon, CommentIcon, LikedIcon, ProfileIcon, USERS } from '../constants.tsx';
+import type { User } from '../types.ts';
+
+// Mock notification data
+const MOCK_NOTIFICATIONS = [
+  {
+    id: 'notif-5',
+    type: 'comment',
+    user: USERS['user-3'],
+    postContent: "Welcome to Cascade! We're building a next-generation social platform...",
+    timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-6',
+    type: 'like',
+    user: USERS['user-6'],
+    postContent: "Golden hour in Santorini. This place is pure magic! ✨",
+    timestamp: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-7',
+    type: 'follow',
+    user: USERS['user-2'],
+    timestamp: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-1',
+    type: 'follow',
+    user: USERS['user-4'],
+    timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-8',
+    type: 'like',
+    user: USERS['user-1'],
+    postContent: "Here's a quick tutorial on how to make the perfect carbonara.",
+    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-2',
+    type: 'like',
+    user: USERS['user-2'],
+    postContent: "Just shipped a new feature for Cascade! It's been a lot of work...",
+    timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-9',
+    type: 'comment',
+    user: USERS['user-5'],
+    postContent: "Golden hour in Santorini. This place is pure magic! ✨",
+    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-3',
+    type: 'like',
+    user: USERS['user-5'],
+    postContent: "Just shipped a new feature for Cascade! It's been a lot of work...",
+    timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-10',
+    type: 'follow',
+    user: USERS['user-1'],
+    timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-11',
+    type: 'like',
+    user: USERS['user-4'],
+    postContent: "Welcome to Cascade! We're building a next-generation social platform...",
+    timestamp: new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-12',
+    type: 'comment',
+    user: USERS['user-2'],
+    postContent: "Here's a quick tutorial on how to make the perfect carbonara.",
+    timestamp: new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-13',
+    type: 'follow',
+    user: USERS['user-5'],
+    timestamp: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-14',
+    type: 'like',
+    user: USERS['user-3'],
+    postContent: "Golden hour in Santorini. This place is pure magic! ✨",
+    timestamp: new Date(Date.now() - 11 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-4',
+    type: 'follow',
+    user: USERS['user-6'],
+    timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-15',
+    type: 'comment',
+    user: USERS['user-6'],
+    postContent: "Welcome to Cascade! We're building a next-generation social platform...",
+    timestamp: new Date(Date.now() - 14 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-16',
+    type: 'follow',
+    user: USERS['user-3'],
+    timestamp: new Date(Date.now() - 15 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-17',
+    type: 'like',
+    user: USERS['user-1'],
+    postContent: "Golden hour in Santorini. This place is pure magic! ✨",
+    timestamp: new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-18',
+    type: 'like',
+    user: USERS['user-2'],
+    postContent: "Here's a quick tutorial on how to make the perfect carbonara.",
+    timestamp: new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-19',
+    type: 'comment',
+    user: USERS['user-4'],
+    postContent: "Welcome to Cascade! We're building a next-generation social platform...",
+    timestamp: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-20',
+    type: 'follow',
+    user: USERS['user-6'],
+    timestamp: new Date(Date.now() - 22 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-21',
+    type: 'like',
+    user: USERS['user-5'],
+    postContent: "Golden hour in Santorini. This place is pure magic! ✨",
+    timestamp: new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-22',
+    type: 'comment',
+    user: USERS['user-1'],
+    postContent: "Here's a quick tutorial on how to make the perfect carbonara.",
+    timestamp: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-23',
+    type: 'like',
+    user: USERS['user-4'],
+    postContent: "Welcome to Cascade! We're building a next-generation social platform...",
+    timestamp: new Date(Date.now() - 28 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'notif-24',
+    type: 'follow',
+    user: USERS['user-2'],
+    timestamp: new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString(),
+  },
+];
+
+interface NotificationsPageProps {
+  onBack: () => void;
+  currentUser: User;
+}
+
+const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUser }) => {
+
+    const ICONS: Record<string, React.ReactNode> = {
+        follow: <ProfileIcon className="w-8 h-8 text-primary" />,
+        like: <LikedIcon className="w-8 h-8 text-pink-500" />,
+        comment: <CommentIcon className="w-8 h-8 text-blue-500" />
+    };
+
+    return (
+        <div className="w-full min-h-screen">
+            <div className="sticky top-0 bg-background/80 dark:bg-dark-background/80 backdrop-blur-md z-10 px-4 py-3 border-b border-border dark:border-dark-border flex items-center gap-4">
+                <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-surface-hover dark:hover:bg-dark-surface-hover">
+                    <BackIcon className="w-6 h-6" />
+                </button>
+                <h1 className="text-xl font-bold">Notifications</h1>
+            </div>
+            <div>
+                {MOCK_NOTIFICATIONS.map(notification => {
+                    const icon = ICONS[notification.type];
+                    let actionText = '';
+                    if (notification.type === 'follow') actionText = 'followed you';
+                    if (notification.type === 'like') actionText = 'liked your post';
+                    if (notification.type === 'comment') actionText = 'commented on your post';
+
+                    return (
+                        <div key={notification.id} className="border-b border-border dark:border-dark-border px-4 py-3 hover:bg-surface-hover dark:hover:bg-dark-surface-hover transition-colors duration-200 cursor-pointer">
+                            <div className="flex gap-4">
+                                <div className="w-8 flex-shrink-0">
+                                    {icon}
+                                </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-3">
+                                        <img src={notification.user.avatarUrl} alt={notification.user.name} className="w-10 h-10 rounded-full" />
+                                        <p className="text-on-surface dark:text-dark-on-surface">
+                                            <span className="font-bold">{notification.user.name}</span>
+                                            {' '}{actionText}
+                                        </p>
+                                    </div>
+                                    {(notification.type === 'like' || notification.type === 'comment') && notification.postContent && (
+                                        <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary mt-1 pl-13">
+                                            {notification.postContent}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
+export default NotificationsPage;

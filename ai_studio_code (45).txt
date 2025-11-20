@@ -1,0 +1,264 @@
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import type { Post as PostType, User, Product, Community } from '../types.ts';
+import { 
+    CoinIcon, 
+    VerifiedIcon, 
+    PlayIcon, 
+    PauseIcon,
+    VolumeUpIcon,
+    VolumeOffIcon,
+    LikeIcon,
+    LikedIcon,
+    CommentIcon,
+    EchoIcon,
+    ShareIcon,
+    AddIcon
+} from '../constants.tsx';
+
+// Reusing PostProps, but adding onBack.
+interface VideoPlayerPageProps {
+  post: PostType;
+  onBack: () => void;
+  currentUser: User;
+  allUsers: User[];
+  subscribedToUserIds: string[];
+  handleToggleLike: (postId: string) => void;
+  handleToggleEcho: (postId: string, isQuotePost?: boolean) => void;
+  handleToggleBookmark: (postId: string) => void;
+  handleSubscribe: (userId: string) => void;
+  openTipModal: (user: User) => void;
+  openGiftModal: (post: PostType) => void;
+  handleAddToCart: (product: Product) => void;
+  claimedPostRewardIds: string[];
+  handleClaimPostReward: (postId: string, reward: number) => void;
+  viewCommunity: (community: Community) => void;
+  handleSearch: (query: string) => void;
+  blockedUserIds: string[];
+  handleToggleBlock: (userId: string) => void;
+  handleViewPost: (post: PostType) => void;
+  handleOpenQuoteModal: (post: PostType) => void;
+  handleOpenEditModal: (post: PostType) => void;
+  handleViewProfile: (userId: string) => void;
+  handlePlayVideo: (post: PostType) => void;
+  handleShareToCommunity: (post: PostType) => void;
+}
+
+const formatCount = (count: number): string => {
+  if (count >= 1000000) return (count / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (count >= 1000) return (count / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return count.toString();
+};
+
+const formatTime = (seconds: number) => {
+  if (isNaN(seconds) || seconds < 0) return '0:00';
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+const VideoPlayerPage: React.FC<VideoPlayerPageProps> = (props) => {
+  const { post, onBack, currentUser, claimedPostRewardIds, handleClaimPostReward, handleToggleLike, handleToggleEcho, handleViewPost, handleSubscribe, handleViewProfile, subscribedToUserIds } = props;
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const controlsTimeoutRef = useRef<number | null>(null);
+
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [isMuted, setIsMuted] = useState(true);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [showControls, setShowControls] = useState(true);
+
+  const [canClaim, setCanClaim] = useState(false);
+  const isRewardClaimed = claimedPostRewardIds.includes(post.id);
+  
+  const hideControls = useCallback(() => {
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    controlsTimeoutRef.current = window.setTimeout(() => setShowControls(false), 3000);
+  }, []);
+
+  const handleUserActivity = useCallback(() => {
+    setShowControls(true);
+    hideControls();
+  }, [hideControls]);
+
+  useEffect(() => {
+    handleUserActivity();
+    return () => {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    };
+  }, [handleUserActivity]);
+
+  const togglePlay = useCallback(() => {
+    if (videoRef.current) {
+      if (videoRef.current.paused) {
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            if (error.name !== 'AbortError') {
+              console.error("Video player play failed:", error);
+            }
+          });
+        }
+        setIsPlaying(true);
+      } else {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const videoElement = videoRef.current;
+    return () => {
+        if (videoElement) {
+            videoElement.pause();
+        }
+    };
+  }, []);
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (videoRef.current && progressRef.current) {
+      const rect = progressRef.current.getBoundingClientRect();
+      const pos = (e.clientX - rect.left) / rect.width;
+      videoRef.current.currentTime = pos * duration;
+    }
+  };
+
+  const handleLoadedMetadata = () => { if (videoRef.current) setDuration(videoRef.current.duration); };
+  
+  const handleTimeUpdate = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    setCurrentTime(video.currentTime);
+    setProgress((video.currentTime / video.duration) * 100);
+
+    if (post.watchAndEarn && !isRewardClaimed && !canClaim) {
+      if (video.currentTime >= post.watchAndEarn.duration) {
+        setCanClaim(true);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+        isMuted ? (video.muted = true) : (video.muted = false);
+    }
+  }, [isMuted]);
+
+  const ActionButton: React.FC<{ icon: React.ReactNode; count?: number; onClick?: (e: React.MouseEvent) => void; isActive?: boolean; }> = 
+    ({ icon, count, onClick, isActive }) => (
+    <div className="flex flex-col items-center gap-1">
+      <button onClick={onClick} className={`bg-black/40 rounded-full p-3 transition-colors ${isActive ? 'bg-primary text-white' : 'text-white'}`}>
+        {icon}
+      </button>
+      {typeof count !== 'undefined' && <span className="text-white font-bold text-sm drop-shadow">{formatCount(count)}</span>}
+    </div>
+  );
+
+  return (
+    <div className="w-full h-screen bg-black flex flex-col relative" onMouseMove={handleUserActivity} onTouchStart={handleUserActivity}>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <video
+          ref={videoRef}
+          src={post.videoUrl}
+          autoPlay
+          loop
+          playsInline
+          onLoadedMetadata={handleLoadedMetadata}
+          onTimeUpdate={handleTimeUpdate}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          className="w-full h-full object-contain"
+        />
+      </div>
+
+      <div onClick={togglePlay} className="absolute inset-0"></div>
+
+      <div className={`absolute inset-0 bg-gradient-to-t from-black/50 to-transparent transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} pointer-events-none`}></div>
+      <div className={`absolute inset-0 bg-gradient-to-b from-black/50 to-transparent transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} pointer-events-none`}></div>
+
+      {showControls && (
+        <button onClick={togglePlay} className="absolute inset-0 flex items-center justify-center text-white z-10">
+          {!isPlaying && <PlayIcon className="w-24 h-24 drop-shadow-lg" />}
+        </button>
+      )}
+
+      {/* Header */}
+      <div className={`absolute top-0 left-0 right-0 z-20 p-4 flex items-center justify-between transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+        <button onClick={onBack} className="text-white p-2 rounded-full hover:bg-white/10">
+          <svg viewBox="0 0 24 24" className="w-6 h-6" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"></path></svg>
+        </button>
+        <button onClick={() => setIsMuted(!isMuted)} className="text-white p-2 rounded-full hover:bg-white/10">
+          {isMuted ? <VolumeOffIcon className="w-6 h-6"/> : <VolumeUpIcon className="w-6 h-6"/>}
+        </button>
+      </div>
+
+      {/* Side Action Bar */}
+      <div className="absolute bottom-24 right-4 z-20 flex flex-col items-center gap-5">
+        <div className="flex flex-col items-center">
+            <button onClick={(e) => {e.stopPropagation(); handleViewProfile(post.user.id)}} className="relative block">
+                <img src={post.user.avatarUrl} className="w-12 h-12 rounded-full border-2 border-white" />
+            </button>
+            {post.user.id !== currentUser.id && (
+                <button onClick={(e) => {e.stopPropagation(); handleSubscribe(post.user.id)}} className="absolute -bottom-3 bg-primary text-white rounded-full w-6 h-6 flex items-center justify-center border-2 border-black">
+                    <AddIcon className="w-4 h-4" />
+                </button>
+            )}
+        </div>
+        <ActionButton 
+            icon={post.isLiked ? <LikedIcon className="w-8 h-8" /> : <LikeIcon className="w-8 h-8" />}
+            count={post.likes} 
+            onClick={(e) => {e.stopPropagation(); handleToggleLike(post.id)}} 
+            isActive={post.isLiked} 
+        />
+        <ActionButton icon={<CommentIcon className="w-8 h-8"/>} count={post.comments} onClick={(e) => {e.stopPropagation(); handleViewPost(post)}} />
+        <ActionButton icon={<EchoIcon className="w-8 h-8"/>} count={post.echos} onClick={(e) => {e.stopPropagation(); handleToggleEcho(post.id)}} />
+        <ActionButton icon={<ShareIcon className="w-8 h-8"/>} />
+      </div>
+
+      {/* Bottom Info */}
+      <div className={`absolute bottom-0 left-0 right-0 z-20 p-4 text-white transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+        <div className="mb-14 mr-20">
+            <div className="flex items-center gap-2">
+                <p className="font-bold">{post.user.handle}</p>
+                {post.user.verificationStatus === 'verified' && <VerifiedIcon className="w-4 h-4 text-white" />}
+            </div>
+            <p className="text-sm mt-1 line-clamp-2">{post.content}</p>
+        </div>
+
+        {/* Custom Progress Bar */}
+        <div className="w-full">
+          {post.watchAndEarn && !isRewardClaimed && (
+            <div className="mb-2 text-center">
+              {canClaim ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleClaimPostReward(post.id, post.watchAndEarn!.reward); }}
+                  className="bg-amber-500 text-white font-bold py-1 px-3 rounded-full text-sm hover:bg-amber-600 transition-all shadow-lg animate-pulse"
+                >
+                  <CoinIcon className="w-4 h-4 inline mr-1" />
+                  Claim +{post.watchAndEarn.reward}
+                </button>
+              ) : (
+                <p className="text-xs font-bold bg-black/50 py-1 px-2 rounded-full inline-block">Watch for {Math.ceil(post.watchAndEarn.duration - currentTime)}s to earn {post.watchAndEarn.reward} coins</p>
+              )}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono">{formatTime(currentTime)}</span>
+            <div ref={progressRef} onClick={handleSeek} className="w-full h-1.5 bg-white/30 rounded-full cursor-pointer group">
+              <div className="h-full bg-white rounded-full relative" style={{ width: `${progress}%` }}>
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              </div>
+            </div>
+            <span className="text-xs font-mono">{formatTime(duration)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default VideoPlayerPage;

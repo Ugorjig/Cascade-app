@@ -1,0 +1,198 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { 
+    LogoIcon, ComposeIcon, VerifiedIcon, HomeIcon, HomeIconFilled, ExploreIcon, ExploreIconFilled, PeopleIcon, PeopleIconFilled, NotificationsIcon, NotificationsIconFilled, 
+    MailIcon, MailIconFilled, BookmarkIcon, BookmarkedIcon, ShopIcon, ShopIconFilled, ProfileIcon, ProfileIconFilled, TvIcon, TvIconFilled, MonetizationIcon, 
+    AdManagerIcon, ShieldIcon, SettingsIcon, LogoutIcon, AnalyticsIcon, FollowersIcon, FollowersIconFilled
+} from '../constants.tsx';
+import type { User } from '../types.ts';
+import { useLanguage } from '../contexts/LanguageContext.tsx';
+
+interface SidebarProps {
+  activeView: string;
+  onNavigate: (view: string) => void;
+  openCompose: () => void;
+  user: User;
+  onLogout: () => void;
+  handleRefresh: () => void;
+  isMobileMenuOpen: boolean;
+  setMobileMenuOpen: (isOpen: boolean) => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ 
+  activeView, onNavigate, openCompose, user, onLogout,
+  handleRefresh, isMobileMenuOpen, setMobileMenuOpen
+}) => {
+  const { t } = useLanguage();
+  const [isProfileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isProfileMenuOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+        if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+            setProfileMenuOpen(false);
+        }
+    };
+    
+    // Add listener on the next tick to avoid capturing the click that opened the menu.
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 0);
+
+    return () => {
+        clearTimeout(timer);
+        document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isProfileMenuOpen]);
+
+  const SIDEBAR_LINKS = [
+    { labelKey: 'sidebar_home', label: 'Home', icon: HomeIcon, activeIcon: HomeIconFilled },
+    { labelKey: 'sidebar_explore', label: 'Explore', icon: ExploreIcon, activeIcon: ExploreIconFilled },
+    { labelKey: 'sidebar_live', label: 'Live', icon: TvIcon, activeIcon: TvIconFilled },
+    { labelKey: 'sidebar_communities', label: 'Communities', icon: PeopleIcon, activeIcon: PeopleIconFilled },
+    { labelKey: 'sidebar_followers', label: 'Followers', icon: FollowersIcon, activeIcon: FollowersIconFilled },
+    { labelKey: 'sidebar_notifications', label: 'Notifications', icon: NotificationsIcon, activeIcon: NotificationsIconFilled },
+    { labelKey: 'sidebar_messages', label: 'Messages', icon: MailIcon, activeIcon: MailIconFilled },
+    { labelKey: 'sidebar_bookmarks', label: 'Bookmarks', icon: BookmarkIcon, activeIcon: BookmarkedIcon },
+    { labelKey: 'sidebar_store', label: 'Store', icon: ShopIcon, activeIcon: ShopIconFilled },
+    { labelKey: 'sidebar_profile', label: 'Profile', icon: ProfileIcon, activeIcon: ProfileIconFilled },
+  ];
+  
+  const PROFILE_MENU_LINKS = [
+    { labelKey: 'profile_menu_monetization', label: 'Monetization', icon: MonetizationIcon },
+    { labelKey: 'profile_menu_ad_manager', label: 'Ad Manager', icon: AdManagerIcon },
+    { labelKey: 'profile_menu_analytics', label: 'Analytics', icon: AnalyticsIcon },
+    { labelKey: 'profile_menu_verification', label: 'Verification', icon: ShieldIcon },
+    { labelKey: 'profile_menu_settings', label: 'Settings', icon: SettingsIcon },
+  ];
+
+  const handleNavigateAndClose = (view: string) => {
+    onNavigate(view);
+    setMobileMenuOpen(false);
+    setProfileMenuOpen(false);
+  };
+  
+  return (
+    <>
+      <div 
+        className={`fixed inset-0 bg-black/50 z-30 md:hidden transition-opacity ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setMobileMenuOpen(false)}
+        aria-hidden="true"
+      />
+      <header 
+        className={`fixed md:sticky top-0 h-screen w-64 px-2 lg:px-6 py-1 flex flex-col bg-background dark:bg-dark-background border-r border-border dark:border-dark-border z-40 transition-transform duration-300 ease-in-out
+          ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
+        `}
+      >
+        <div className="flex-shrink-0 flex items-center justify-between md:block">
+          <button
+            onClick={() => {
+              if (activeView === 'Home') {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                setTimeout(handleRefresh, 100);
+              } else {
+                handleNavigateAndClose('Home');
+              }
+            }}
+            className="p-3 my-2 text-on-surface hover:bg-gray-100 dark:hover:bg-dark-surface rounded-full w-min transition-colors duration-200"
+            aria-label="Home"
+          >
+            <LogoIcon className="w-8 h-8" />
+          </button>
+          <button onClick={() => setMobileMenuOpen(false)} className="md:hidden text-on-surface dark:text-dark-on-surface font-bold text-2xl w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-hover dark:hover:bg-dark-surface-hover transition-colors duration-200" aria-label="Close">
+            &times;
+          </button>
+        </div>
+        
+        <div className="flex-1 flex flex-col overflow-y-auto">
+          <nav>
+            <ul>
+              {SIDEBAR_LINKS.map((link) => {
+                const isActive = link.label === activeView;
+                const Icon = isActive ? link.activeIcon : link.icon;
+                return (
+                  <li key={link.label}>
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleNavigateAndClose(link.label);
+                      }}
+                      className="flex items-center gap-4 text-xl py-3 px-4 my-1 rounded-full hover:bg-gray-100 dark:hover:bg-dark-surface transition-colors duration-200"
+                    >
+                      <Icon className="w-7 h-7" />
+                      <span className={`${isActive ? 'font-bold' : ''}`}>{t(link.labelKey)}</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+          <button
+            onClick={() => { openCompose(); setMobileMenuOpen(false); }}
+            className="bg-primary text-white text-lg font-bold w-full h-14 rounded-full mt-4 hover:bg-primary/90 transition-colors duration-200 flex items-center justify-center flex-shrink-0"
+          >
+            <span >{t('sidebar_post_button')}</span>
+          </button>
+        </div>
+
+        <div className="flex-shrink-0 pt-4 relative" ref={profileMenuRef}>
+            {isProfileMenuOpen && (
+                <div className="absolute bottom-full mb-2 w-full bg-background dark:bg-dark-surface rounded-2xl shadow-lg border border-border dark:border-dark-border py-2">
+                    <ul>
+                        {PROFILE_MENU_LINKS.map(link => (
+                            <li key={link.label}>
+                            <a
+                              href="#"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleNavigateAndClose(link.label);
+                              }}
+                              className="flex items-center gap-4 text-base py-3 px-4 my-1 mx-2 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-surface-hover transition-colors duration-200"
+                            >
+                              <link.icon className="w-6 h-6" />
+                              <span className="font-semibold">{t(link.labelKey)}</span>
+                            </a>
+                        </li>
+                        ))}
+                        <li><div className="h-px bg-border dark:bg-dark-border my-1" /></li>
+                        <li>
+                            <a
+                                href="#"
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    onLogout();
+                                    setMobileMenuOpen(false);
+                                    setProfileMenuOpen(false);
+                                }}
+                                className="flex items-center gap-4 text-base py-3 px-4 my-1 mx-2 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-surface-hover transition-colors duration-200"
+                            >
+                                <LogoutIcon className="w-6 h-6" />
+                                <span className="font-semibold">{t('profile_menu_logout_simple')}</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            )}
+            <button onClick={() => setProfileMenuOpen(prev => !prev)} className="w-full text-left p-3 rounded-full hover:bg-gray-100 dark:hover:bg-dark-surface transition-colors duration-200 cursor-pointer mt-2 mb-4">
+                <div className="flex items-center gap-3">
+                    <img src={user.avatarUrl} alt="User avatar" className="w-10 h-10 rounded-full" />
+                    <div>
+                        <div className="flex items-center gap-1">
+                        <p className="font-bold text-on-surface dark:text-dark-on-surface">{user.name}</p>
+                        {user.verificationStatus === 'verified' && <VerifiedIcon className="w-4 h-4 text-primary" title="Verified Account" />}
+                        </div>
+                        <p className="text-on-surface-secondary dark:text-dark-on-surface-secondary">{user.handle}</p>
+                    </div>
+                </div>
+            </button>
+        </div>
+      </header>
+    </>
+  );
+};
+
+export default Sidebar;

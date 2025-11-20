@@ -1,0 +1,52 @@
+import React from 'react';
+import type { User } from '../types.ts';
+import { LogoIcon, VerifiedIcon } from '../constants.tsx';
+import { useLanguage } from '../contexts/LanguageContext.tsx';
+
+interface AuthPageProps {
+  users: User[];
+  onLogin: (user: User) => void;
+}
+
+const AuthPage: React.FC<AuthPageProps> = ({ users, onLogin }) => {
+  const { t } = useLanguage();
+  
+  return (
+    <div className="min-h-screen bg-background dark:bg-dark-background flex flex-col justify-center items-center p-4">
+      <div className="max-w-md w-full mx-auto">
+        <div className="text-center mb-10">
+          <LogoIcon className="w-16 h-16 mx-auto text-primary" />
+          <h2 className="mt-6 text-3xl font-extrabold text-on-surface dark:text-dark-on-surface">
+            Welcome to Cascade
+          </h2>
+          <p className="mt-2 text-on-surface-secondary dark:text-dark-on-surface-secondary">
+            Select a user to continue
+          </p>
+        </div>
+        <div className="bg-background dark:bg-dark-surface p-4 rounded-2xl border border-border dark:border-dark-border shadow-sm">
+          <ul className="space-y-2">
+            {users.map((user) => (
+              <li key={user.id}>
+                <button
+                  onClick={() => onLogin(user)}
+                  className="w-full text-left p-3 flex items-center gap-4 rounded-lg hover:bg-surface dark:hover:bg-dark-surface-hover transition-colors"
+                >
+                  <img src={user.avatarUrl} alt={user.name} className="w-12 h-12 rounded-full" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1">
+                      <p className="font-bold truncate">{user.name}</p>
+                      {user.verificationStatus === 'verified' && <VerifiedIcon className="w-4 h-4 text-primary" />}
+                    </div>
+                    <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary truncate">{user.handle}</p>
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default AuthPage;

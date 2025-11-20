@@ -1,0 +1,207 @@
+import React, { useState, useRef, useEffect } from 'react';
+import type { User, MonetizationSettings, Transaction, TransactionType, Post as PostType } from '../types.ts';
+import { MonetizationIcon, StarIcon, GiftIcon, CreditCardIcon, SparklesIcon, RefreshIcon, ShopIcon, LockIcon, BackIcon } from '../constants.tsx';
+import { useNotifications } from './Notifications.tsx';
+import { useLanguage } from '../contexts/LanguageContext.tsx';
+import { getAI_Business_Coach_Advice } from '../services/geminiService.ts';
+
+interface MonetizationPageProps {
+  earnings: {
+    subscriptions: number;
+    tips: number;
+    adRevenue: number;
+    gifts: number;
+  };
+  currentUser: User;
+  onUpdateSettings: (setting: keyof MonetizationSettings, value: boolean) => void;
+  allPosts: PostType[];
+  onBack?: () => void;
+}
+
+const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: string; }> = ({ icon, label, value }) => (
+    <div className="bg-surface dark:bg-dark-surface p-4 rounded-lg border border-border dark:border-dark-border">
+        <div className="flex items-center text-on-surface-secondary dark:text-dark-on-surface-secondary">
+            {icon}
+            <span className="ml-2 text-sm font-semibold">{label}</span>
+        </div>
+        <p className="text-2xl font-bold mt-2 text-on-surface dark:text-dark-on-surface">{value}</p>
+    </div>
+);
+
+const ToggleSwitch: React.FC<{
+  label: string;
+  description: string;
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+  disabled?: boolean;
+}> = ({ label, description, enabled, onChange, disabled }) => (
+  <div className={`flex justify-between items-center bg-background dark:bg-dark-background p-4 rounded-lg border border-gray-200 dark:border-dark-border ${disabled ? 'opacity-50' : ''}`}>
+    <div>
+        <h4 className="font-semibold">{label}</h4>
+        <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">{description}</p>
+    </div>
+    <button
+      onClick={() => !disabled && onChange(!enabled)}
+      disabled={disabled}
+      className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-300 ${disabled ? 'cursor-not-allowed' : ''} ${enabled ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-600'}`}
+    >
+      <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform duration-300 ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  </div>
+);
+
+interface CoachInsight {
+    title: string;
+    description: string;
+}
+
+const MonetizationPage: React.FC<MonetizationPageProps> = ({ earnings, currentUser, onUpdateSettings, allPosts, onBack }) => {
+  const { t, locale } = useLanguage();
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollY = useRef<number>(0);
+  const { addNotification } = useNotifications();
+
+  const defaultSettings: MonetizationSettings = {
+    subscriptionsEnabled: false,
+    giftsEnabled: false,
+    adsEnabled: false,
+    tipsEnabled: false
+  };
+  
+  const [settings, setSettings] = useState<MonetizationSettings>(currentUser.monetizationSettings || defaultSettings);
+  const [coachInsights, setCoachInsights] = useState<CoachInsight[]>([]);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY.current && currentScrollY > 50) {
+        setIsHeaderVisible(false);
+      } else {
+        setIsHeaderVisible(true);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const handleSettingChange = (setting: keyof MonetizationSettings, value: boolean) => {
+    const newSettings = { ...settings, [setting]: value };
+    setSettings(newSettings);
+    onUpdateSettings(setting, value);
+  };
+  
+  const fetchCoachAdvice = async () => {
+      if(isLoadingInsights) return;
+      setIsLoadingInsights(true);
+      try {
+          const advice = await getAI_Business_Coach_Advice(currentUser, earnings, allPosts.filter(p => p.user.id === currentUser.id));
+          setCoachInsights(advice);
+      } catch (error) {
+          console.error("Failed to get AI coach advice", error);
+          addNotification("Could not load AI insights at this time.", 'info');
+      } finally {
+          setIsLoadingInsights(false);
+      }
+  };
+  
+  useEffect(() => {
+      if (currentUser.monetizationEligibility === 'eligible') {
+          fetchCoachAdvice();
+      }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser.monetizationEligibility]);
+
+  const totalEarnings = earnings.subscriptions + earnings.tips + earnings.adRevenue + earnings.gifts;
+  const formattedTotal = new Intl.NumberFormat(locale, { style: 'currency', currency: currentUser.currency || 'USD' }).format(totalEarnings);
+
+  const renderEligibility = () => {
+    switch (currentUser.monetizationEligibility) {
+        case 'eligible':
+            return (
+                <div className="space-y-6">
+                    <div className="bg-surface dark:bg-dark-surface rounded-2xl p-6 text-center border border-border dark:border-dark-border">
+                      <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">Estimated earnings (last 30 days)</p>
+                      <p className="text-4xl font-extrabold text-on-surface dark:text-dark-on-surface mt-2">{formattedTotal}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <StatCard icon={<StarIcon className="w-5 h-5"/>} label="Subscriptions" value={`$${earnings.subscriptions.toFixed(2)}`} />
+                        <StatCard icon={<GiftIcon className="w-5 h-5"/>} label="Gifts & Tips" value={`$${(earnings.tips + earnings.gifts).toFixed(2)}`} />
+                        <StatCard icon={<CreditCardIcon className="w-5 h-5"/>} label="Ad Revenue" value={`$${earnings.adRevenue.toFixed(2)}`} />
+                        <StatCard icon={<ShopIcon className="w-5 h-5"/>} label="Product Sales" value="$0.00" />
+                    </div>
+
+                    <div className="bg-surface dark:bg-dark-surface rounded-2xl p-6 border border-border dark:border-dark-border">
+                        <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                           <SparklesIcon className="w-6 h-6 text-primary" />
+                           AI Business Coach
+                           <button onClick={fetchCoachAdvice} disabled={isLoadingInsights} className="ml-auto p-1 rounded-full hover:bg-surface-hover dark:hover:bg-dark-surface-hover">
+                            <RefreshIcon className={`w-5 h-5 ${isLoadingInsights ? 'animate-spin' : ''}`} />
+                           </button>
+                        </h3>
+                        {isLoadingInsights && coachInsights.length === 0 ? (
+                           <div className="text-center p-4">
+                            <div className="w-6 h-6 border-2 border-current rounded-full border-t-transparent animate-spin mx-auto"></div>
+                            <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary mt-2">Generating insights...</p>
+                           </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {coachInsights.map((insight, index) => (
+                                    <div key={index} className="bg-background dark:bg-dark-background p-3 rounded-lg border border-border dark:border-dark-border">
+                                        <h4 className="font-semibold">{insight.title}</h4>
+                                        <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary whitespace-pre-wrap">{insight.description}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    
+                     <div className="space-y-4">
+                        <h3 className="text-lg font-bold">Monetization Settings</h3>
+                        <ToggleSwitch label="Subscriptions" description="Allow users to subscribe for a monthly fee." enabled={settings.subscriptionsEnabled} onChange={(val) => handleSettingChange('subscriptionsEnabled', val)} />
+                        <ToggleSwitch label="Gifts & Tips" description="Allow users to send you gifts on posts and tips on your profile." enabled={settings.giftsEnabled} onChange={(val) => handleSettingChange('giftsEnabled', val)} />
+                        <ToggleSwitch label="Ad Revenue Sharing" description="Earn a share of revenue from ads shown on your content." enabled={settings.adsEnabled} onChange={(val) => handleSettingChange('adsEnabled', val)} />
+                    </div>
+                </div>
+            );
+        case 'ineligible':
+        case 'under_review':
+        default:
+            return (
+                <div className="text-center p-8 bg-surface dark:bg-dark-surface rounded-2xl border border-border dark:border-dark-border">
+                    <LockIcon className="w-12 h-12 text-on-surface-secondary dark:text-dark-on-surface-secondary mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold">Monetization Status: {currentUser.monetizationEligibility === 'under_review' ? 'Under Review' : 'Ineligible'}</h2>
+                    <p className="text-on-surface-secondary dark:text-dark-on-surface-secondary mt-2 max-w-md mx-auto">
+                        {currentUser.ineligibilityReason || "We're currently reviewing your account for monetization. We'll notify you once the review is complete."}
+                    </p>
+                </div>
+            );
+    }
+  }
+
+  return (
+    <div className="w-full pb-16 md:pb-0 min-h-screen">
+      <div className={`sticky top-0 bg-background/80 dark:bg-dark-background/80 backdrop-blur-md z-10 px-4 py-3 border-b border-border dark:border-dark-border transition-transform duration-300 flex items-center gap-4 ${!isHeaderVisible ? '-translate-y-full' : ''}`}>
+        {onBack && (
+          <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-surface-hover dark:hover:bg-dark-surface-hover md:hidden">
+            <BackIcon className="w-6 h-6" />
+          </button>
+        )}
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <MonetizationIcon className="w-6 h-6 text-primary" strokeWidth="2.5" />
+            Monetization
+          </h1>
+          <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">Manage your earnings and creator tools</p>
+        </div>
+      </div>
+      <div className="p-4">
+        {renderEligibility()}
+      </div>
+    </div>
+  );
+};
+
+export default MonetizationPage;

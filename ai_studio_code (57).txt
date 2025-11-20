@@ -1,0 +1,143 @@
+import React, { useState, useRef, useEffect } from 'react';
+import type { WatchableAd } from '../types.ts';
+import { MOCK_WATCHABLE_ADS, BackIcon, MonetizationIcon } from '../constants.tsx';
+
+// AdVideoPlayer is a self-contained component to handle video playback and rewards
+const AdVideoPlayer: React.FC<{
+  ad: WatchableAd;
+  isWatched: boolean;
+  onWatchAdComplete: (adId: string) => void;
+}> = ({ ad, isWatched, onWatchAdComplete }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [progress, setProgress] = useState(0);
+  const hasRewarded = useRef(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !containerRef.current) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          // Muted autoplay is generally allowed
+          video.play().catch(e => {
+            if (e.name !== 'AbortError') {
+              console.error("Autoplay failed:", e);
+            }
+          });
+        } else {
+          video.pause();
+        }
+      },
+      { threshold: 0.75 } // Play when 75% of the video is visible
+    );
+
+    observer.observe(containerRef.current);
+
+    return () => {
+      observer.disconnect();
+      if (video) {
+        video.pause();
+      }
+    };
+  }, []);
+
+  const handleTimeUpdate = () => {
+    const video = videoRef.current;
+    if (video && video.duration) {
+      const currentProgress = (video.currentTime / video.duration) * 100;
+      setProgress(currentProgress);
+    }
+  };
+
+  const handleVideoEnd = () => {
+    // Only reward once, and only if it hasn't been watched before
+    if (!isWatched && !hasRewarded.current) {
+      onWatchAdComplete(ad.id);
+      hasRewarded.current = true; // Prevents multiple reward calls
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="bg-surface dark:bg-dark-surface rounded-lg border border-gray-200 dark:border-dark-border p-4 flex items-center gap-4">
+      <div className="relative flex-shrink-0 w-48 h-28">
+        <video
+          ref={videoRef}
+          src={ad.videoUrl}
+          poster={ad.thumbnailUrl}
+          muted
+          playsInline
+          loop={isWatched} // Loop if already watched
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={handleVideoEnd}
+          className="w-full h-full object-cover rounded-md bg-black"
+        />
+        {!isWatched && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/30 rounded-b-md overflow-hidden">
+            <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }}></div>
+          </div>
+        )}
+      </div>
+      <div className="flex-1">
+        <h3 className="font-bold">{ad.title}</h3>
+        <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary line-clamp-2">{ad.description}</p>
+      </div>
+      <div className={`font-bold px-4 py-2 rounded-full flex items-center gap-2 text-sm ${isWatched ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400' : 'bg-primary/10 text-primary'}`}>
+        <MonetizationIcon className="w-5 h-5" />
+        <span>+${(ad.reward / 100).toFixed(2)}</span>
+      </div>
+    </div>
+  );
+};
+
+// FIX: Defined the WatchAndEarnPageProps interface.
+interface WatchAndEarnPageProps {
+  watchedAdIds: string[];
+  onWatchAdComplete: (adId: string) => void;
+  onBack: () => void;
+}
+
+export const WatchAndEarnPage: React.FC<WatchAndEarnPageProps> = ({ watchedAdIds, onWatchAdComplete, onBack }) => {
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollY = useRef<number>(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY.current && currentScrollY > 50) {
+        setIsHeaderVisible(false);
+      } else {
+        setIsHeaderVisible(true);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  return (
+    <div className="w-full pb-16 md:pb-0">
+      <div className={`sticky top-0 bg-background/80 dark:bg-dark-background/80 backdrop-blur-md z-10 px-4 py-3 border-b border-gray-200 dark:border-dark-border transition-transform duration-300 flex items-center gap-4 ${!isHeaderVisible ? '-translate-y-full' : ''}`}>
+        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-surface-hover dark:hover:bg-dark-surface-hover md:hidden">
+            <BackIcon className="w-6 h-6" />
+        </button>
+        <div>
+          <h1 className="text-xl font-bold">Watch & Earn</h1>
+          <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">Watch short videos to earn ad credits</p>
+        </div>
+      </div>
+      <div className="p-4 space-y-4">
+        {MOCK_WATCHABLE_ADS.map(ad => (
+          <AdVideoPlayer
+            key={ad.id}
+            ad={ad}
+            isWatched={watchedAdIds.includes(ad.id)}
+            onWatchAdComplete={onWatchAdComplete}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,53 @@
+import React from 'react';
+import type { Comment } from '../types.ts';
+import { VerifiedIcon } from '../constants.tsx';
+
+interface CommentProps {
+  comment: Comment;
+}
+
+const timeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    let interval = seconds / 31536000;
+    if (interval > 1) return Math.floor(interval) + "y";
+    interval = seconds / 2592000;
+    if (interval > 1) return Math.floor(interval) + "m";
+    interval = seconds / 86400;
+    if (interval > 1) return Math.floor(interval) + "d";
+    interval = seconds / 3600;
+    if (interval > 1) return Math.floor(interval) + "h";
+    interval = seconds / 60;
+    if (interval > 1) return Math.floor(interval) + "m";
+    return Math.floor(seconds) + "s";
+};
+
+const CommentComponent: React.FC<CommentProps> = ({ comment }) => {
+  const { user, content, timestamp } = comment;
+
+  return (
+    <div className="p-4 border-b border-gray-200">
+        <div className="flex space-x-4">
+            <div className="flex-shrink-0">
+                <img src={user.avatarUrl} alt={`${user.name}'s avatar`} className="w-12 h-12 rounded-full" />
+            </div>
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center space-x-1 min-w-0">
+                  <span className="font-bold truncate">{user.name}</span>
+                   {user.verificationStatus === 'verified' && <VerifiedIcon className="w-5 h-5 text-primary flex-shrink-0" title="Verified Account" />}
+                  <span className="text-on-surface-secondary truncate">{user.handle}</span>
+                  <span className="text-on-surface-secondary">·</span>
+                  <span className="text-on-surface-secondary">{timeAgo(timestamp)}</span>
+                </div>
+            </div>
+        </div>
+        <div className="w-full mt-1">
+             <p className="my-1 text-lg whitespace-pre-wrap break-words">{content}</p>
+        </div>
+    </div>
+  );
+};
+
+export default CommentComponent;

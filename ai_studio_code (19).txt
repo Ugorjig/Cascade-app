@@ -1,0 +1,112 @@
+import React, { useState, useMemo } from 'react';
+import type { Post as PostType, User, Product, Community, AdCampaign } from '../types.ts';
+import { MoreIcon, ExploreIcon as SearchIcon, BackIcon } from '../constants.tsx';
+import { Post } from './Post.tsx';
+import { useLanguage } from '../contexts/LanguageContext.tsx';
+
+
+interface ExplorePageProps {
+  posts: PostType[];
+  activeAdCampaigns: AdCampaign[];
+  handleSearch: (query: string) => void;
+  onBack: () => void;
+  // Pass down all the handlers for the Post component
+  currentUser: User;
+  subscribedToUserIds: string[];
+  handleToggleLike: (postId: string) => void;
+  handleToggleEcho: (postId: string, isQuotePost?: boolean) => void;
+  handleToggleBookmark: (postId: string) => void;
+  handleSubscribe: (userId: string) => void;
+  openGiftModal: (post: PostType) => void;
+  handleAddToCart: (product: Product) => void;
+  viewCommunity: (community: Community) => void;
+  blockedUserIds: string[];
+  handleToggleBlock: (userId: string) => void;
+  handleViewPost: (post: PostType) => void;
+  handleOpenQuoteModal: (post: PostType) => void;
+  handleOpenBoostModal: (post: PostType) => void;
+  handlePlayVideo: (postId: string) => void;
+  playingVideoId: string | null;
+  handleViewProfile: (userId: string) => void;
+  handleOpenEditModal: (post: PostType) => void;
+  allUsers: User[];
+}
+
+const ExplorePage: React.FC<ExplorePageProps> = (props) => {
+  const { posts, handleSearch, activeAdCampaigns, currentUser, onBack } = props;
+  const [query, setQuery] = useState('');
+  const { t } = useLanguage();
+
+  const TRENDS = [
+    { category: t('trends_category_tech'), topic: '#React19', posts: '15.2K posts' },
+    { category: t('trends_category_webdev'), topic: '#Vite', posts: '8,456 posts' },
+    { category: t('trends_category_ai'), topic: 'Gemini API', posts: '22.1K posts' },
+    { category: t('trends_category_design'), topic: 'UI/UX Best Practices', posts: '5,001 posts' },
+  ];
+
+  const onSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (query.trim()) {
+      handleSearch(query.trim());
+      setQuery('');
+    }
+  };
+  
+  const trendingPosts = useMemo(() => {
+    const now = new Date();
+    return [...posts]
+      .filter(p => p.status !== 'scheduled' || !p.scheduledAt || new Date(p.scheduledAt) <= now)
+      .sort((a, b) => (b.likes + b.echos * 2) - (a.likes + a.echos * 2))
+      .slice(0, 10); // Take top 10 viral posts
+  }, [posts]);
+
+  return (
+    <div className="w-full min-h-screen">
+      <div className="sticky top-0 bg-background/80 dark:bg-dark-background/80 backdrop-blur-md z-10 p-4 border-b border-border dark:border-dark-border flex items-center gap-4">
+        <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-surface-hover dark:hover:bg-dark-surface-hover">
+            <BackIcon className="w-6 h-6" />
+        </button>
+        <form onSubmit={onSearchSubmit} className="relative flex-1">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <SearchIcon className="w-5 h-5 text-on-surface-secondary dark:text-dark-on-surface-secondary" />
+          </div>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('trends_search_placeholder')}
+            className="w-full bg-surface dark:bg-dark-surface rounded-full py-2 pl-10 pr-4 text-on-surface dark:text-dark-on-surface border border-border dark:border-dark-border focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </form>
+      </div>
+
+      <div className="border-b border-border dark:border-dark-border">
+        <h2 className="text-xl font-bold p-4">{t('trends_title')}</h2>
+        <ul>
+          {TRENDS.map((trend, index) => (
+            <li key={index}>
+              <a href="#" onClick={(e) => { e.preventDefault(); handleSearch(trend.topic); }} className="flex justify-between items-start p-4 hover:bg-surface-hover dark:hover:bg-dark-surface-hover transition-colors duration-200">
+                <div>
+                  <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">{trend.category}</p>
+                  <p className="font-bold">{trend.topic}</p>
+                  <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">{trend.posts}</p>
+                </div>
+                 <MoreIcon className="w-5 h-5 text-on-surface-secondary dark:text-dark-on-surface-secondary" />
+              </a>
+            </li>
+          ))}
+        </ul>
+         <a href="#" className="text-primary p-4 block font-semibold hover:bg-surface-hover dark:hover:bg-dark-surface-hover">{t('trends_show_more')}</a>
+      </div>
+      
+      <div>
+        {trendingPosts.map(post => {
+          const isBoosted = activeAdCampaigns.some(c => c.promotionType === 'post' && c.promotedPostId === post.id);
+          return <Post key={post.id} post={post} isBoosted={isBoosted} {...props} />
+        })}
+      </div>
+    </div>
+  );
+};
+
+export default ExplorePage;

@@ -1,0 +1,313 @@
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { 
+    ImageIcon, 
+    PollIcon, 
+    CalendarIcon, 
+    LocationIcon,
+    EmojiIcon,
+    GIFIcon,
+    BackIcon,
+    WebsiteIcon
+} from '../constants.tsx';
+import type { User, Community, Post, Product } from '../types.ts';
+import { useLanguage } from '../contexts/LanguageContext.tsx';
+
+interface ComposePageProps {
+  onBack: () => void;
+  handleCreatePost: (content: string, fileUrl?: string, fileType?: 'image' | 'video', isSubscriberOnly?: boolean, communityId?: string, scheduledAt?: string, quotedPost?: Post, thumbnailUrl?: string, duration?: number, poll?: { choices: string[], durationInDays: number }, taggedProduct?: Product, location?: string, draftId?: string) => void;
+  handleEditPost: (postId: string, content: string) => void;
+  currentUser: User;
+  joinedCommunities: Community[];
+  postToQuote: Post | null;
+  postToEdit: Partial<Post> | null;
+  allUsers: User[];
+  initialText?: string;
+  userProducts: Product[];
+  handleSaveDraft: (draftData: Partial<Post>, options?: { silent?: boolean }) => string;
+  openDraftsModal: () => void;
+}
+
+const fileToDataURL = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+};
+
+const ComposePage: React.FC<ComposePageProps> = (props) => {
+  const { onBack, handleCreatePost, handleEditPost, currentUser, postToQuote, postToEdit, initialText, handleSaveDraft, openDraftsModal } = props;
+  const { t } = useLanguage();
+
+  const [content, setContent] = useState('');
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [mediaDataUrl, setMediaDataUrl] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<'image' | 'video' | null>(null);
+
+  const [showScheduler, setShowScheduler] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState<string>('');
+  
+  const [isCreatingPoll, setIsCreatingPoll] = useState(false);
+  const [pollChoices, setPollChoices] = useState(['', '']);
+  const [pollDurationInDays, setPollDurationInDays] = useState(1);
+  const [location, setLocation] = useState<string | null>(null);
+  const [draftId, setDraftId] = useState<string | null>(null);
+
+
+  const mediaInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    let newContent = '';
+    if (postToEdit) { 
+      newContent = postToEdit.content || '';
+      if (postToEdit.id?.startsWith('draft-')) {
+          setDraftId(postToEdit.id);
+      }
+       if (postToEdit.poll) {
+        setIsCreatingPoll(true);
+        setPollChoices(postToEdit.poll.choices.map(c => c.text));
+        // TODO: handle poll duration if saved in draft
+      }
+      if (postToEdit.imageUrl && postToEdit.fileType === 'image') {
+        setMediaPreview(postToEdit.imageUrl);
+        setMediaDataUrl(postToEdit.imageUrl);
+        setMediaType('image');
+      } else if (postToEdit.videoUrl && postToEdit.fileType === 'video') {
+        setMediaPreview(postToEdit.videoUrl);
+        setMediaDataUrl(postToEdit.videoUrl);
+        setMediaType('video');
+      }
+      setLocation(postToEdit.location ?? null);
+    } else if (initialText) { 
+      newContent = initialText;
+    }
+    setContent(newContent);
+    
+    if (textareaRef.current) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        textareaRef.current!.style.height = 'auto';
+        textareaRef.current!.style.height = `${textareaRef.current!.scrollHeight}px`;
+      }, 100);
+    }
+  }, [postToEdit, initialText]);
+
+  const stateRef = useRef<any>();
+  useEffect(() => {
+      stateRef.current = {
+          content, mediaDataUrl, mediaType, isCreatingPoll, pollChoices, pollDurationInDays, location, postToQuote, draftId, postToEdit
+      };
+  });
+  
+  const doSave = useCallback((isSilent: boolean): string | null => {
+      const current = stateRef.current;
+      if (!current) return null;
+
+      const hasContent = current.content.trim() || current.mediaDataUrl || (current.isCreatingPoll && current.pollChoices.some((c: string) => c.trim()));
+      if (!hasContent && !current.postToQuote) {
+          return null;
+      }
+
+      const draftData: Partial<Post> = {
+          id: current.draftId || current.postToEdit?.id,
+          content: current.content,
+          imageUrl: current.mediaType === 'image' ? current.mediaDataUrl : undefined,
+          videoUrl: current.mediaType === 'video' ? current.mediaDataUrl : undefined,
+          fileType: current.mediaType ?? undefined,
+          poll: current.isCreatingPoll && current.pollChoices.some((c: string) => c.trim())
+              ? { choices: current.pollChoices.filter((c: string) => c.trim()).map((c: string) => ({ text: c, votes: 0 })), endsAt: new Date(Date.now() + current.pollDurationInDays * 24 * 60 * 60 * 1000).toISOString() }
+              : undefined,
+          location: current.location ?? undefined,
+          quotedPost: current.postToQuote ?? undefined,
+      };
+
+      const savedId = handleSaveDraft(draftData, { silent: isSilent });
+      if (savedId && savedId !== current.draftId) {
+          setDraftId(savedId);
+      }
+      return savedId;
+  }, [handleSaveDraft]);
+
+  useEffect(() => {
+      const intervalId = setInterval(() => {
+          doSave(true);
+      }, 60000);
+
+      // Save on unmount
+      return () => {
+          clearInterval(intervalId);
+          doSave(true);
+      };
+  }, [doSave]);
+
+  
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setContent(e.target.value);
+    if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  };
+
+  const clearMedia = useCallback(() => {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview);
+    setMediaFile(null); setMediaPreview(null); setMediaDataUrl(null); setMediaType(null);
+    if (mediaInputRef.current) mediaInputRef.current.value = "";
+  }, [mediaPreview]);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    clearMedia(); setIsCreatingPoll(false);
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const fileType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : null;
+      if (fileType) {
+        setMediaFile(file);
+        setMediaPreview(URL.createObjectURL(file));
+        setMediaType(fileType);
+        const dataUrl = await fileToDataURL(file);
+        setMediaDataUrl(dataUrl);
+      }
+    }
+  };
+
+  const handlePollChoiceChange = (index: number, value: string) => { const newChoices = [...pollChoices]; newChoices[index] = value; setPollChoices(newChoices); };
+  const addPollChoice = () => { if (pollChoices.length < 4) setPollChoices([...pollChoices, '']); };
+  const removePollChoice = (index: number) => { if (pollChoices.length > 2) { const newChoices = [...pollChoices]; newChoices.splice(index, 1); setPollChoices(newChoices); } };
+  const togglePollCreator = () => { if (isCreatingPoll) setIsCreatingPoll(false); else { clearMedia(); setIsCreatingPoll(true); } };
+
+  const isPostButtonDisabled = postToEdit 
+    ? !content.trim() 
+    : (!content.trim() && !mediaFile && !postToQuote && !isCreatingPoll);
+
+  const handleBack = () => {
+      const current = stateRef.current;
+      const hasContent = current.content.trim() || current.mediaDataUrl || (current.isCreatingPoll && current.pollChoices.some((c: string) => c.trim()));
+      if (hasContent) {
+          doSave(false);
+      }
+      onBack();
+  };
+
+  const handleSubmit = () => {
+    if (isPostButtonDisabled) return;
+    const isEditingPublishedPost = postToEdit?.id && !postToEdit.id.startsWith('draft-');
+
+    if (isEditingPublishedPost) {
+        handleEditPost(postToEdit.id!, content);
+    } else {
+        const finalDraftId = draftId || (postToEdit?.id?.startsWith('draft-') ? postToEdit.id : undefined);
+        const finalScheduledAt = scheduledAt && new Date(scheduledAt) > new Date() ? new Date(scheduledAt).toISOString() : undefined;
+        const pollData = isCreatingPoll && pollChoices.every(c => c.trim()) 
+            ? { choices: pollChoices.map(c => c.trim()), durationInDays: pollDurationInDays } 
+            : undefined;
+        handleCreatePost(content, mediaDataUrl || undefined, mediaType || undefined, false, undefined, finalScheduledAt, postToQuote ?? undefined, undefined, undefined, pollData, undefined, location ?? undefined, finalDraftId);
+    }
+  };
+  const handleLocationClick = () => {
+    if (location) {
+        setLocation(null);
+    } else {
+        navigator.geolocation.getCurrentPosition((position) => {
+            // In a real app, you'd use a reverse geocoding service here.
+            setLocation(`Lat: ${position.coords.latitude.toFixed(2)}, Lon: ${position.coords.longitude.toFixed(2)}`);
+        }, () => {
+             const userLocation = window.prompt("Enter your location:");
+            if (userLocation && userLocation.trim()) {
+                setLocation(userLocation.trim());
+            }
+        });
+    }
+  };
+
+  return (
+    <div className="w-full h-screen flex flex-col bg-background dark:bg-dark-background">
+      <div className="px-4 py-2 flex items-center justify-between border-b border-border dark:border-dark-border">
+        <button onClick={handleBack} className="text-on-surface dark:text-dark-on-surface p-2 rounded-full hover:bg-surface-hover dark:hover:bg-dark-surface" aria-label="Back">
+          <BackIcon className="w-6 h-6"/>
+        </button>
+        <div className="flex items-center gap-4">
+          <button onClick={openDraftsModal} className="font-bold text-primary hover:opacity-80">Drafts</button>
+          <button onClick={handleSubmit} disabled={isPostButtonDisabled} className="bg-primary text-white font-bold px-4 py-1.5 rounded-full disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-hover transition-colors duration-200">
+            {postToEdit && !postToEdit.id?.startsWith('draft-') ? t('button_save') : t('button_post')}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col overflow-y-auto">
+        <div className="flex-1 p-4 flex">
+            <div className="mr-4 flex-shrink-0">
+              <img src={currentUser.avatarUrl} alt="Your avatar" className="w-12 h-12 rounded-full" />
+            </div>
+            <div className="flex-1">
+              <textarea 
+                ref={textareaRef} 
+                value={content} 
+                onChange={handleContentChange} 
+                placeholder={isCreatingPoll ? "Ask a question..." : t('compose_placeholder')} 
+                className="w-full text-xl bg-transparent focus:outline-none resize-none placeholder:text-on-surface-secondary dark:placeholder:text-dark-on-surface-secondary" 
+                rows={3} 
+              />
+              
+              {location && (
+                <div className="mt-2 text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary flex items-center gap-1 border border-border dark:border-dark-border rounded-full px-3 py-1 w-fit">
+                  <LocationIcon className="w-4 h-4" />
+                  <span>{location}</span>
+                  <button onClick={() => setLocation(null)} className="font-bold text-lg -mr-1">&times;</button>
+                </div>
+              )}
+
+              {mediaPreview && (
+                <div className="relative mt-2">
+                  {mediaType === 'image' && <img src={mediaPreview} alt="media preview" className="rounded-2xl max-h-96 w-full object-cover" />}
+                  {mediaType === 'video' && <video src={mediaPreview} controls className="rounded-2xl max-h-96 w-full" />}
+                  <button onClick={clearMedia} className="absolute top-2 right-2 bg-black/70 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold text-xl hover:bg-black/90">&times;</button>
+                </div>
+              )}
+              {isCreatingPoll && (
+                <div className="mt-4 space-y-3 border border-border dark:border-dark-border rounded-lg p-4">
+                    {pollChoices.map((choice, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                            <input type="text" value={choice} onChange={e => handlePollChoiceChange(index, e.target.value)} placeholder={`Choice ${index + 1}`} maxLength={25} className="w-full bg-surface dark:bg-dark-surface border border-gray-300 dark:border-dark-border rounded-md p-2" />
+                            {pollChoices.length > 2 && <button onClick={() => removePollChoice(index)} className="font-bold text-xl">&times;</button>}
+                        </div>
+                    ))}
+                    {pollChoices.length < 4 && <button onClick={addPollChoice} className="text-sm font-semibold text-primary">Add a choice</button>}
+                    <div className="border-t border-border dark:border-dark-border pt-3 mt-3">
+                        <label className="text-sm font-semibold">Poll duration</label>
+                        <div className="flex gap-2 mt-1">
+                          {[1, 3, 7].map(days => (
+                            <button key={days} onClick={() => setPollDurationInDays(days)} className={`px-3 py-1 rounded-full text-sm font-semibold ${pollDurationInDays === days ? 'bg-primary text-white' : 'bg-surface dark:bg-dark-surface hover:bg-surface-hover dark:hover:bg-dark-surface-hover'}`}>{days} day{days > 1 ? 's' : ''}</button>
+                          ))}
+                        </div>
+                    </div>
+                </div>
+              )}
+            </div>
+        </div>
+      </div>
+      
+      <div className="p-2 border-t border-border dark:border-dark-border">
+        {showScheduler && (
+          <div className="p-2">
+            <label className="font-bold text-sm flex items-center gap-2"><CalendarIcon className="w-5 h-5"/> Schedule for</label>
+            <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="w-full mt-1 bg-surface dark:bg-dark-surface border border-gray-300 dark:border-dark-border rounded-md p-2"/>
+            <button onClick={() => setShowScheduler(false)} className="text-sm text-red-500 mt-2">Clear</button>
+          </div>
+        )}
+        <div className="flex items-center gap-1 text-primary">
+          <button onClick={() => mediaInputRef.current?.click()} className="p-2 rounded-full hover:bg-primary/10"><ImageIcon className="w-6 h-6"/></button>
+          <input type="file" ref={mediaInputRef} onChange={handleFileChange} accept="image/*,video/*" hidden/>
+          <button onClick={togglePollCreator} className={`p-2 rounded-full hover:bg-primary/10 ${isCreatingPoll ? 'bg-primary/10' : ''}`}><PollIcon className="w-6 h-6"/></button>
+          <button onClick={() => setShowScheduler(!showScheduler)} className="p-2 rounded-full hover:bg-primary/10"><CalendarIcon className="w-6 h-6"/></button>
+          <button onClick={handleLocationClick} className="p-2 rounded-full hover:bg-primary/10"><LocationIcon className="w-6 h-6"/></button>
+          <button className="p-2 rounded-full hover:bg-primary/10"><EmojiIcon className="w-6 h-6"/></button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ComposePage;

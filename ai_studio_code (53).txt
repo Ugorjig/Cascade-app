@@ -1,0 +1,281 @@
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import type { User, Post as PostType, Product, Community, Comment, AdCampaign } from '../types.ts';
+import { Post } from './Post.tsx';
+import { VerifiedIcon, CameraIcon, LocationIcon, WebsiteIcon, AddIcon, VideoIcon, LikeIcon, CommentIcon, BackIcon } from '../constants.tsx';
+import { useLanguage } from '../contexts/LanguageContext.tsx';
+import CommentComponent from './Comment.tsx';
+import ShopPage from './ShopPage.tsx';
+
+interface ProfilePageProps {
+  user: User;
+  allPosts: PostType[];
+  allProducts: Product[];
+  activeAdCampaigns: AdCampaign[];
+  currentUser: User;
+  subscribedToUserIds: string[];
+  handleUpdateProfile: (updates: { bio?: string, avatarUrl?: string, bannerUrl?: string, location?: string, country?: string, website?: string }) => void;
+  openCreateProductModal: () => void;
+  handleToggleLike: (postId: string) => void;
+  handleToggleEcho: (postId: string, isQuotePost?: boolean) => void;
+  handleToggleBookmark: (postId: string) => void;
+  handleSubscribe: (userId: string) => void;
+  openGiftModal: (post: PostType) => void;
+  handleAddToCart: (product: Product) => void;
+  viewCommunity: (community: Community) => void;
+  handleSearch: (query: string) => void;
+  blockedUserIds: string[];
+  handleToggleBlock: (userId: string) => void;
+  handleViewPost: (post: PostType) => void;
+  handleOpenQuoteModal: (post: PostType) => void;
+  handlePlayVideo: (postId: string) => void;
+  playingVideoId: string | null;
+  allUsers: User[];
+  handleOpenEditModal: (post: PostType) => void;
+  handleOpenBoostModal: (post: PostType) => void;
+  handleViewProfile: (userId: string) => void;
+  handleToggleAccountStatus: (userId: string) => void;
+  onBack?: () => void;
+}
+
+const fileToDataURL = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+};
+
+const TabButton: React.FC<{
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+}> = ({ label, isActive, onClick }) => {
+  return (
+    <button
+      onClick={onClick}
+      className="flex-grow flex-shrink-0 hover:bg-gray-100 dark:hover:bg-dark-surface transition-colors duration-200"
+      role="tab"
+      aria-selected={isActive}
+    >
+      <div className="relative py-4 px-4 text-center text-sm font-bold">
+        <span className={`whitespace-nowrap ${isActive ? 'text-on-surface dark:text-dark-on-surface' : 'text-on-surface-secondary dark:text-dark-on-surface-secondary'}`}>
+          {label}
+        </span>
+        {isActive && <div className="absolute bottom-0 inset-x-4 h-1 bg-primary rounded-full"></div>}
+      </div>
+    </button>
+  );
+};
+
+export const ProfilePage: React.FC<ProfilePageProps> = ({ user, allPosts, allProducts, activeAdCampaigns, currentUser, subscribedToUserIds, handleUpdateProfile, openCreateProductModal, handleToggleLike, handleToggleEcho, handleToggleBookmark, handleSubscribe, openGiftModal, handleAddToCart, viewCommunity, handleSearch, blockedUserIds, handleToggleBlock, handleViewPost, handleOpenQuoteModal, handleOpenBoostModal, handlePlayVideo, allUsers, handleOpenEditModal, handleViewProfile, handleToggleAccountStatus, playingVideoId, onBack }) => {
+  const [activeTab, setActiveTab] = useState('Posts');
+  const [isEditing, setIsEditing] = useState(false);
+  const [bioText, setBioText] = useState(user.bio || '');
+  const [locationText, setLocationText] = useState(user.location || '');
+  const [countryText, setCountryText] = useState(user.country || '');
+  const [websiteText, setWebsiteText] = useState(user.website || '');
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollY = useRef<number>(0);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+  const { t } = useLanguage();
+
+  const isOwnProfile = user.id === currentUser.id;
+
+  // This effect synchronizes the component's internal state with the user prop.
+  // This is crucial for when the user navigates from one profile to another.
+  useEffect(() => {
+    setBioText(user.bio || '');
+    setLocationText(user.location || '');
+    setCountryText(user.country || '');
+    setWebsiteText(user.website || '');
+    setAvatarPreview(null);
+    setBannerPreview(null);
+    setIsEditing(false); // Exit edit mode when switching profiles
+    setActiveTab('Posts'); // Reset to default tab
+  }, [user]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY > lastScrollY.current && currentScrollY > 50) {
+        setIsHeaderVisible(false);
+      } else {
+        setIsHeaderVisible(true);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+  
+  const userPosts = useMemo(() => {
+    return allPosts.filter(p => p.user.id === user.id);
+  }, [allPosts, user.id]);
+
+  const userProducts = useMemo(() => {
+    return allProducts.filter(p => p.seller.id === user.id);
+  }, [allProducts, user.id]);
+
+  const allPostHandlers = { currentUser, subscribedToUserIds, handleToggleLike, handleToggleEcho, handleToggleBookmark, handleSubscribe, openGiftModal, handleAddToCart, viewCommunity, handleSearch, blockedUserIds, handleToggleBlock, handleViewPost, handleOpenQuoteModal, handleOpenBoostModal, handlePlayVideo, playingVideoId, allUsers, handleOpenEditModal, handleViewProfile, handleShareToCommunity: () => {}, activeAdCampaigns };
+
+  const handleSave = async () => {
+    const updates: { bio?: string, avatarUrl?: string, bannerUrl?: string, location?: string, country?: string, website?: string } = {
+        bio: bioText,
+        location: locationText,
+        country: countryText,
+        website: websiteText
+    };
+    if (avatarPreview) updates.avatarUrl = avatarPreview;
+    if (bannerPreview) updates.bannerUrl = bannerPreview;
+
+    handleUpdateProfile(updates);
+    setIsEditing(false);
+  };
+  
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const dataUrl = await fileToDataURL(e.target.files[0]);
+      setAvatarPreview(dataUrl);
+    }
+  };
+  const handleBannerChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const dataUrl = await fileToDataURL(e.target.files[0]);
+      setBannerPreview(dataUrl);
+    }
+  };
+
+  const renderContent = () => {
+    switch(activeTab) {
+      case 'Posts':
+        return userPosts.length > 0
+          ? userPosts.map(post => <Post key={post.id} post={post} {...allPostHandlers} />)
+          : <div className="text-center p-8 text-on-surface-secondary">This user hasn't posted anything yet.</div>;
+      case 'Replies':
+         const replies = allPosts.flatMap(p => p.commentData).filter(c => c.user.id === user.id);
+         return replies.length > 0 
+            ? replies.map(reply => <CommentComponent key={reply.id} comment={reply} />)
+            : <div className="text-center p-8 text-on-surface-secondary">This user hasn't replied to any posts yet.</div>;
+      case 'Media':
+         const mediaPosts = userPosts.filter(p => p.fileType === 'image' || p.fileType === 'video');
+         return mediaPosts.length > 0 
+            ? mediaPosts.map(post => <Post key={post.id} post={post} {...allPostHandlers} />)
+            : <div className="text-center p-8 text-on-surface-secondary">This user hasn't posted any media yet.</div>;
+      case 'Likes':
+          const likedPosts = allPosts.filter(p => p.isLiked && user.id === currentUser.id);
+          return likedPosts.length > 0 
+            ? likedPosts.map(post => <Post key={post.id} post={post} {...allPostHandlers} />)
+            : <div className="text-center p-8 text-on-surface-secondary">Posts you like will appear here.</div>;
+      case 'Store':
+        return <ShopPage products={userProducts} isEmbedded handleAddToCart={handleAddToCart} />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="w-full">
+      <div className={`sticky top-0 bg-background/80 dark:bg-dark-background/80 backdrop-blur-md z-10 px-4 py-3 border-b border-border dark:border-dark-border transition-transform duration-300 flex items-center gap-4 ${!isHeaderVisible ? '-translate-y-full' : ''}`}>
+        {onBack && (
+            <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-surface-hover dark:hover:bg-dark-surface-hover">
+               <BackIcon className="w-6 h-6" />
+            </button>
+        )}
+        <div>
+          <h1 className="text-xl font-bold">{user.name}</h1>
+          <p className="text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary">{t('profile_posts_count', { count: userPosts.length })}</p>
+        </div>
+      </div>
+      <div>
+        <div className="h-48 bg-gray-300 dark:bg-dark-surface relative">
+          {(bannerPreview || user.bannerUrl) && <img src={bannerPreview || user.bannerUrl} alt={`${user.name}'s banner`} className="w-full h-full object-cover" />}
+          {isEditing && (
+            <button onClick={() => bannerInputRef.current?.click()} className="absolute inset-0 bg-black/50 flex items-center justify-center text-white">
+                <CameraIcon className="w-8 h-8"/>
+                <input type="file" ref={bannerInputRef} onChange={handleBannerChange} accept="image/*" hidden />
+            </button>
+          )}
+        </div>
+        <div className="p-4">
+          <div className="flex justify-between items-start">
+             <div className="relative">
+                <img src={avatarPreview || user.avatarUrl} alt={`${user.name}'s avatar`} className="w-32 h-32 rounded-full border-4 border-background dark:border-dark-background -mt-20" />
+                {isEditing && (
+                     <button onClick={() => avatarInputRef.current?.click()} className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center text-white">
+                        <CameraIcon className="w-8 h-8"/>
+                        <input type="file" ref={avatarInputRef} onChange={handleAvatarChange} accept="image/*" hidden />
+                    </button>
+                )}
+             </div>
+            {isOwnProfile ? (
+              isEditing ? (
+                 <div className="flex gap-2">
+                    <button onClick={() => setIsEditing(false)} className="bg-surface dark:bg-dark-surface text-on-surface dark:text-dark-on-surface font-bold px-4 py-2 rounded-full border border-border dark:border-dark-border">{t('button_cancel')}</button>
+                    <button onClick={handleSave} className="bg-on-surface dark:bg-dark-on-surface text-background dark:text-dark-background font-bold px-4 py-2 rounded-full">{t('button_save')}</button>
+                 </div>
+              ) : (
+                <button onClick={() => setIsEditing(true)} className="bg-on-surface dark:bg-dark-on-surface text-background dark:text-dark-background font-bold px-4 py-2 rounded-full">{t('button_edit_profile')}</button>
+              )
+            ) : (
+               <button className="bg-on-surface dark:bg-dark-on-surface text-background dark:text-dark-background font-bold px-4 py-2 rounded-full">{t('button_subscribe_for', { price: user.subscriptionPrice || 0 })}</button>
+            )}
+          </div>
+          <div className="mt-2">
+            <div className="flex items-center gap-1">
+                <h2 className="text-xl font-extrabold">{user.name}</h2>
+                {user.verificationStatus === 'verified' && <VerifiedIcon className="w-5 h-5 text-primary" />}
+            </div>
+            <p className="text-on-surface-secondary dark:text-dark-on-surface-secondary">{user.handle}</p>
+            <div className="mt-4">
+                {isEditing ? (
+                    <textarea value={bioText} onChange={(e) => setBioText(e.target.value)} className="w-full bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-lg p-2" placeholder="Your bio" />
+                ) : (
+                    user.bio && <p className="mt-2">{user.bio}</p>
+                )}
+                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-on-surface-secondary dark:text-dark-on-surface-secondary mt-2">
+                    {isEditing ? (
+                        <input value={locationText} onChange={(e) => setLocationText(e.target.value)} className="bg-surface dark:bg-dark-surface border-b border-border dark:border-dark-border p-1" placeholder="Location" />
+                    ) : (
+                        user.location && <span className="flex items-center gap-1"><LocationIcon className="w-4 h-4"/>{user.location}</span>
+                    )}
+                     {isEditing ? (
+                        <input value={websiteText} onChange={(e) => setWebsiteText(e.target.value)} className="bg-surface dark:bg-dark-surface border-b border-border dark:border-dark-border p-1" placeholder="Website" />
+                    ) : (
+                        user.website && <a href={user.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline"><WebsiteIcon className="w-4 h-4"/>{user.website.replace(/https?:\/\//, '')}</a>
+                    )}
+                </div>
+            </div>
+             <div className="flex gap-4 mt-4 text-sm">
+                <button className="hover:underline"><span className="font-bold">{user.following}</span> <span className="text-on-surface-secondary dark:text-dark-on-surface-secondary">{t('profile_following')}</span></button>
+                <button className="hover:underline"><span className="font-bold">{user.followers}</span> <span className="text-on-surface-secondary dark:text-dark-on-surface-secondary">{t('profile_followers')}</span></button>
+            </div>
+            {isOwnProfile && userProducts.length === 0 && (
+                <div className="mt-4 bg-primary/10 text-primary border border-primary/20 p-4 rounded-lg flex items-center justify-between">
+                    <div>
+                        <h3 className="font-bold">Set up your store</h3>
+                        <p className="text-sm">Start selling products directly from your profile.</p>
+                    </div>
+                    <button onClick={openCreateProductModal} className="bg-primary text-white font-bold px-4 py-2 rounded-full text-sm">Add Product</button>
+                </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="border-b border-border dark:border-dark-border flex">
+        <TabButton label="Posts" isActive={activeTab === 'Posts'} onClick={() => setActiveTab('Posts')} />
+        <TabButton label="Replies" isActive={activeTab === 'Replies'} onClick={() => setActiveTab('Replies')} />
+        <TabButton label="Media" isActive={activeTab === 'Media'} onClick={() => setActiveTab('Media')} />
+        {isOwnProfile && <TabButton label="Likes" isActive={activeTab === 'Likes'} onClick={() => setActiveTab('Likes')} />}
+        {userProducts.length > 0 && <TabButton label="Store" isActive={activeTab === 'Store'} onClick={() => setActiveTab('Store')} />}
+      </div>
+       <div>
+         {renderContent()}
+       </div>
+    </div>
+  );
+};

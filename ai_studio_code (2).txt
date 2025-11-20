@@ -1,0 +1,260 @@
+import React, { useRef, useEffect } from 'react';
+import type { AdCampaign, User, Post as PostType, Product, Community } from '../types.ts';
+// FIX: Changed default import of 'Post' to a named import.
+import { Post } from './Post.tsx';
+import ProductCard from './ProductCard.tsx';
+import { VerifiedIcon, RocketIcon, CoinIcon } from '../constants.tsx';
+
+interface AdPostProps {
+  campaign: AdCampaign;
+  allUsers: User[];
+  allPosts: PostType[];
+  allProducts: Product[];
+  // Re-using post handlers for boosted posts
+  currentUser: User;
+  subscribedToUserIds: string[];
+  handleToggleLike: (postId: string) => void;
+  handleToggleEcho: (postId: string, isQuotePost?: boolean) => void;
+  handleToggleBookmark: (postId: string) => void;
+  handleSubscribe: (userId: string) => void;
+  openGiftModal: (post: PostType) => void;
+  handleAddToCart: (product: Product) => void;
+  handleClaimAdReward: (campaign: AdCampaign, engagementType: 'like' | 'echo') => void;
+  claimedAdRewards: Record<string, ('like' | 'echo')[]>;
+  viewCommunity: (community: Community) => void;
+  handleSearch: (query: string) => void;
+  onAdImpression: (campaignId: string) => void;
+  onAdClick: (campaignId: string) => void;
+  blockedUserIds: string[];
+  handleToggleBlock: (userId: string) => void;
+  handleViewPost: (post: PostType) => void;
+  handleOpenQuoteModal: (post: PostType) => void;
+  handlePlayVideo: (postId: string) => void;
+  playingVideoId: string | null;
+  handleOpenEditModal: (post: PostType) => void;
+  handleViewProfile: (userId: string) => void;
+}
+
+const AdPost: React.FC<AdPostProps> = (props) => {
+  const {
+      campaign, allPosts, allProducts, allUsers,
+      handleClaimAdReward, claimedAdRewards, onAdClick, onAdImpression,
+      ...postHandlers
+  } = props;
+  
+  const adRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          onAdImpression(campaign.id);
+          observer.disconnect(); // Fire only once per mount
+        }
+      },
+      { threshold: 0.5 } // 50% of the ad must be visible
+    );
+
+    const currentRef = adRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
+    }
+
+    return () => {
+      if (currentRef) {
+        observer.unobserve(currentRef);
+      }
+    };
+  }, [campaign.id, onAdImpression]);
+
+  useEffect(() => {
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+
+    const observer = new IntersectionObserver(
+        ([entry]) => {
+            if (!entry.isIntersecting) {
+                videoElement.pause();
+            }
+        },
+        { threshold: 0.1 }
+    );
+
+    observer.observe(videoElement);
+
+    return () => {
+        if (videoElement) {
+            observer.unobserve(videoElement);
+        }
+    };
+  }, [campaign.id]);
+  
+  const handleAdClickWrapper = () => {
+    onAdClick(campaign.id);
+  };
+  
+  const renderContentWithHashtags = (text: string) => {
+    const parts = text.split(/(#[\w_]+)/g);
+    return (
+      <p className="my-2 text-lg whitespace-pre-wrap">
+        {parts.map((part, index) => {
+          if (/(#[\w_]+)/.test(part)) {
+            return (
+              <button
+                key={index}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  postHandlers.handleSearch(part);
+                }}
+                className="text-primary dark:text-violet-400 hover:underline focus:outline-none"
+              >
+                {part}
+              </button>
+            );
+          }
+          return part;
+        })}
+      </p>
+    );
+  };
+  
+  const renderAdContent = () => {
+    const owner = allUsers.find(u => u.id === campaign.ownerId);
+    if (!owner) return null; // Should not happen
+
+    switch (campaign.promotionType) {
+        case 'post': {
+            const post = allPosts.find(p => p.id === campaign.promotedPostId);
+            if (!post) return <div className="p-4 text-sm text-on-surface-secondary">Boosted post not found.</div>;
+
+            const campaignClaims = claimedAdRewards[campaign.id] || [];
+            
+            const handleRewardedLike = (postId: string) => {
+                postHandlers.handleToggleLike(postId);
+                if (campaign.engagementReward && !post.isLiked && !campaignClaims.includes('like')) {
+                    handleClaimAdReward(campaign, 'like');
+                }
+            };
+
+            const handleRewardedEcho = (postId: string, isQuotePost?: boolean) => {
+                postHandlers.handleToggleEcho(postId, isQuotePost);
+                if (campaign.engagementReward && !post.isEchoed && !isQuotePost && !campaignClaims.includes('echo')) {
+                    handleClaimAdReward(campaign, 'echo');
+                }
+            };
+
+            const isRewardAvailable = campaign.engagementReward && (!campaignClaims.includes('like') || !campaignClaims.includes('echo'));
+            
+            return (
+                <div onClick={handleAdClickWrapper}>
+                    <div className="px-4 pt-3 flex items-center gap-2 text-xs font-semibold text-amber-600">
+                        <RocketIcon className="w-4 h-4"/>
+                        <span>Boosted</span>
+                    </div>
+                    <Post 
+                      {...postHandlers}
+                      post={post}
+                      handleToggleLike={handleRewardedLike}
+                      handleToggleEcho={handleRewardedEcho}
+                    />
+                    {isRewardAvailable && (
+                         <div className="px-4 pb-3 -mt-2">
+                            <div className="p-2 border border-amber-400 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+                                <CoinIcon className="w-5 h-5"/>
+                                <span>Engage with this post to earn <strong>{campaign.engagementReward} coins</strong>.</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        case 'account':
+             return (
+                <div className="p-4">
+                    <p className="text-xs font-semibold text-on-surface-secondary mb-2">Sponsored Account</p>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 overflow-hidden">
+                            <img src={owner.avatarUrl} alt={owner.name} className="w-12 h-12 rounded-full flex-shrink-0" />
+                            <div className="overflow-hidden">
+                                <div className="flex items-center gap-1">
+                                    <p className="font-bold truncate">{owner.name}</p>
+                                    {owner.verificationStatus === 'verified' && <VerifiedIcon className="w-4 h-4 text-primary flex-shrink-0" title="Verified Account" />}
+                                </div>
+                                <p className="text-on-surface-secondary truncate">{owner.handle}</p>
+                                <p className="text-sm text-on-surface-secondary truncate mt-1">{owner.bio?.substring(0, 50)}...</p>
+                            </div>
+                        </div>
+                        <a 
+                            href={campaign.destinationUrl}
+                            onClick={handleAdClickWrapper}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-on-surface text-background font-bold text-sm px-4 py-2 rounded-full hover:bg-on-surface/90 transition-colors duration-200 flex-shrink-0"
+                        >
+                            {campaign.ctaText}
+                        </a>
+                    </div>
+                </div>
+            );
+        
+        case 'product':
+             const product = allProducts.find(p => p.id === campaign.promotedProductId);
+             if (!product) return <div className="p-4 text-sm text-on-surface-secondary">Sponsored product not found.</div>;
+             return (
+                <div className="p-4" onClick={handleAdClickWrapper}>
+                    <p className="text-xs font-semibold text-on-surface-secondary mb-2">Sponsored Product</p>
+                    <ProductCard product={product} onAddToCart={postHandlers.handleAddToCart} />
+                </div>
+             );
+
+        default: // website, app, store
+             return (
+                <article className="p-4 flex space-x-4">
+                    <div className="flex-shrink-0">
+                        <img src={owner.avatarUrl} alt="Sponsor avatar" className="w-12 h-12 rounded-full" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-1 min-w-0">
+                            <span className="font-bold truncate">{owner.name}</span>
+                        </div>
+                        <p className="text-xs font-semibold text-on-surface-secondary">Sponsored</p>
+                        </div>
+                        {campaign.content && renderContentWithHashtags(campaign.content)}
+                        
+                        {campaign.mediaType === 'image' && (
+                        <div className="mt-3 rounded-2xl border border-gray-200 overflow-hidden">
+                            <img src={campaign.mediaUrl} alt="Ad media" className="w-full object-cover max-h-[600px]" />
+                        </div>
+                        )}
+                        {campaign.mediaType === 'video' && (
+                        <div className="mt-3 rounded-2xl border border-gray-200 overflow-hidden">
+                            <video ref={videoRef} src={campaign.mediaUrl} controls muted loop playsInline className="block w-full object-cover max-h-[600px]" />
+                        </div>
+                        )}
+
+                        <a 
+                        href={campaign.destinationUrl}
+                        onClick={handleAdClickWrapper}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-4 block w-full bg-surface text-on-surface font-bold py-2 px-4 rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors duration-200 text-center"
+                        >
+                        {campaign.ctaText}
+                        </a>
+                    </div>
+                </article>
+             );
+    }
+  }
+
+  return (
+    <div ref={adRef} className="border-b border-gray-200 dark:border-dark-border bg-amber-50/20 dark:bg-amber-900/10">
+      {renderAdContent()}
+    </div>
+  );
+};
+
+export default AdPost;
